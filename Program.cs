@@ -6,7 +6,7 @@ var builder = WebApplication.CreateBuilder(args);
 // Add services to the container.
 builder.Services.AddControllersWithViews();
 builder.Services.AddSingleton<PdfService>();
-// NOTE: UploadFolderService removed to restore single Temp folder behavior
+builder.Services.AddSingleton<UploadFolderService>();
 
 var app = builder.Build();
 

@@ -69,12 +69,14 @@ namespace PdfReaderDemo.Services
         public List<SplitFileResult> SplitPdfByAccountCode(
             string originalPdfPath,
             List<SoaRecord> records,
-            string customCode = "")
+            string customCode = "",
+            string outputFolder = "")
         {
             var outputFiles = new List<SplitFileResult>();
             var grouped = records.GroupBy(r => new { r.AccountCode, r.Date });
 
-            string wwwRoot = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "Temp");
+            // If an output folder is provided (per-upload), use it. Otherwise use shared wwwroot/Temp
+            string wwwRoot = !string.IsNullOrEmpty(outputFolder) ? outputFolder : Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "Temp");
             Directory.CreateDirectory(wwwRoot);
 
             using var pdfReader = new PdfReader(originalPdfPath);
@@ -224,12 +226,12 @@ namespace PdfReaderDemo.Services
         public List<SplitFileResult> SplitPdfByDebtorCode(
             string originalPdfPath,
             List<DebtorRecord> records,
-            string customCode = "")
+            string customCode = "",
+            string outputFolder = "")
         {
             var outputFiles = new List<SplitFileResult>();
             var grouped = records.GroupBy(r => r.DebtorCode);
-
-            string wwwRoot = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "Temp");
+            string wwwRoot = !string.IsNullOrEmpty(outputFolder) ? outputFolder : Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "Temp");
             Directory.CreateDirectory(wwwRoot);
 
             using var pdfReader = new PdfReader(originalPdfPath);
@@ -275,7 +277,8 @@ namespace PdfReaderDemo.Services
         public List<SplitFileResult> SplitPdfByInvoice(
             string originalPdfPath,
             List<InvoiceRecord> records,
-            string customCode = "")
+            string customCode = "",
+            string outputFolder = "")
         {
             var outputFiles = new List<SplitFileResult>();
             var grouped = records.GroupBy(r =>
@@ -285,8 +288,7 @@ namespace PdfReaderDemo.Services
                 else
                     return new { r.DebtorCode, YearMonth = "0000" };
             });
-
-            string wwwRoot = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "Temp");
+            string wwwRoot = !string.IsNullOrEmpty(outputFolder) ? outputFolder : Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "Temp");
             Directory.CreateDirectory(wwwRoot);
 
             using var pdfReader = new PdfReader(originalPdfPath);

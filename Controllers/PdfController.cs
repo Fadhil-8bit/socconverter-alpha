@@ -9,10 +9,12 @@ namespace PdfReaderDemo.Controllers
     public class PdfController : Controller
     {
         private readonly PdfService _pdfService;
+        private readonly UploadFolderService _uploadFolderService;
 
-        public PdfController(PdfService pdfService)
+        public PdfController(PdfService pdfService, UploadFolderService uploadFolderService)
         {
             _pdfService = pdfService;
+            _uploadFolderService = uploadFolderService;
         }
 
         [HttpGet]
@@ -22,12 +24,33 @@ namespace PdfReaderDemo.Controllers
         }
 
         [HttpGet]
-        public IActionResult Download(string fileName)
+        public IActionResult Download(string fileName, string? folderId)
         {
             if (string.IsNullOrEmpty(fileName))
                 return BadRequest();
 
-            string filePath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "Temp", fileName);
+            // Validate folderId (only alphanumeric, underscore, hyphen - prevent path traversal)
+            if (!string.IsNullOrEmpty(folderId) && !System.Text.RegularExpressions.Regex.IsMatch(folderId, @"^[a-zA-Z0-9_\-]+$"))
+                return BadRequest("Invalid folder ID");
+
+            // Build folder path - use folderId if provided, otherwise fallback to shared Temp
+            string folder;
+            if (!string.IsNullOrEmpty(folderId))
+            {
+                var baseTemp = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "Temp");
+                folder = Path.Combine(baseTemp, folderId);
+            }
+            else
+            {
+                // Fallback: try TempData, then shared Temp
+                var uploadFolderObj = TempData.Peek("UploadFolder");
+                string? uploadFolder = uploadFolderObj as string;
+                folder = !string.IsNullOrEmpty(uploadFolder)
+                    ? uploadFolder
+                    : Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "Temp");
+            }
+
+            string filePath = Path.Combine(folder, fileName);
 
             if (!System.IO.File.Exists(filePath))
                 return NotFound();
@@ -59,27 +82,18 @@ namespace PdfReaderDemo.Controllers
             }
 
             string tempFolder = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "Temp");
-            if (Directory.Exists(tempFolder))
-            {
-                foreach (var file in Directory.GetFiles(tempFolder, "*.pdf"))
-                {
-                    try { System.IO.File.Delete(file); } catch { }
-                }
-                foreach (var file in Directory.GetFiles(tempFolder, "*.zip"))
-                {
-                    try { System.IO.File.Delete(file); } catch { }
-                }
-            }
-            else
-            {
-                Directory.CreateDirectory(tempFolder);
-            }
+            // Ensure the shared temp folder exists (we won't clear it because uploads are stored per-folder)
+            Directory.CreateDirectory(tempFolder);
 
-            var filePath = Path.Combine(Path.GetTempPath(), pdfFile.FileName);
+            // create a per-upload folder and save the original PDF there
+            string uploadFolder = _uploadFolderService.CreateUploadFolder();
+            var filePath = Path.Combine(uploadFolder, Path.GetFileName(pdfFile.FileName));
             using (var stream = System.IO.File.Create(filePath))
             {
                 await pdfFile.CopyToAsync(stream);
             }
+            // store the upload folder for later download/zip operations
+            TempData["UploadFolder"] = uploadFolder;
 
             try
             {
@@ -94,7 +108,7 @@ namespace PdfReaderDemo.Controllers
                         return View("Index");
                     }
 
-                        splitFiles = _pdfService.SplitPdfByAccountCode(filePath, soaRecords, customCode);
+                        splitFiles = _pdfService.SplitPdfByAccountCode(filePath, soaRecords, customCode, uploadFolder);
                 }
                 else if (splitType == "Invoice")
                 {
@@ -105,7 +119,7 @@ namespace PdfReaderDemo.Controllers
                         return View("Index");
                     }
 
-                        splitFiles = _pdfService.SplitPdfByInvoice(filePath, invoiceRecords, customCode);
+                        splitFiles = _pdfService.SplitPdfByInvoice(filePath, invoiceRecords, customCode, uploadFolder);
                 }
                 else if (splitType == "DebtorCode")
                 {
@@ -116,7 +130,7 @@ namespace PdfReaderDemo.Controllers
                         return View("Index");
                     }
 
-                        splitFiles = _pdfService.SplitPdfByDebtorCode(filePath, debtorRecords, customCode);
+                        splitFiles = _pdfService.SplitPdfByDebtorCode(filePath, debtorRecords, customCode, uploadFolder);
                 }
                 else
                 {
@@ -124,6 +138,9 @@ namespace PdfReaderDemo.Controllers
                     return View("Index");
                 }
 
+                // Extract folder ID (just the folder name, not full path) to pass to view
+                string folderId = Path.GetFileName(uploadFolder);
+                ViewBag.FolderId = folderId;
                 TempData["CurrentSplitFiles"] = string.Join(";", splitFiles.Select(f => f.FileName));
 
                 return View("SplitResult", splitFiles);
@@ -136,34 +153,54 @@ namespace PdfReaderDemo.Controllers
         }
 
         [HttpGet]
-        public IActionResult DownloadAll()
+        public IActionResult DownloadAll(string? folderId)
         {
-            var currentFiles = TempData["CurrentSplitFiles"]?.ToString();
-            if (string.IsNullOrEmpty(currentFiles))
-                return NotFound("No files found for download.");
+            // Validate folderId (only alphanumeric, underscore, hyphen - prevent path traversal)
+            if (!string.IsNullOrEmpty(folderId) && !System.Text.RegularExpressions.Regex.IsMatch(folderId, @"^[a-zA-Z0-9_\-]+$"))
+                return BadRequest("Invalid folder ID");
 
-            string tempFolder = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "Temp");
+            // Build folder path
+            string folder;
+            if (!string.IsNullOrEmpty(folderId))
+            {
+                var baseTemp = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "Temp");
+                folder = Path.Combine(baseTemp, folderId);
+            }
+            else
+            {
+                // Fallback: try TempData
+                var currentFiles = TempData["CurrentSplitFiles"]?.ToString();
+                if (string.IsNullOrEmpty(currentFiles))
+                    return NotFound("No files found for download.");
 
-            var fileNames = currentFiles.Split(';', StringSplitOptions.RemoveEmptyEntries);
+                var uploadFolderObj = TempData.Peek("UploadFolder");
+                string? uploadFolder = uploadFolderObj as string;
+                folder = !string.IsNullOrEmpty(uploadFolder)
+                    ? uploadFolder
+                    : Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "Temp");
+            }
 
-            if (fileNames.Length == 0)
-                return NotFound("No PDF files found.");
+            // Check folder exists
+            if (!Directory.Exists(folder))
+                return NotFound($"Upload folder not found.");
 
-            string zipFileName = "CurrentUpload_SplitFiles.zip";
-            string zipPath = Path.Combine(tempFolder, zipFileName);
+            // Get PDF files from folder
+            var pdfFiles = Directory.GetFiles(folder, "*.pdf");
+            if (pdfFiles.Length == 0)
+                return NotFound("No PDF files found in upload folder.");
+
+            string zipFileName = "SplitFiles.zip";
+            string zipPath = Path.Combine(folder, zipFileName);
 
             if (System.IO.File.Exists(zipPath))
                 System.IO.File.Delete(zipPath);
 
             using (var zip = System.IO.Compression.ZipFile.Open(zipPath, System.IO.Compression.ZipArchiveMode.Create))
             {
-                foreach (var fileName in fileNames)
+                foreach (var filePath in pdfFiles)
                 {
-                    string filePath = Path.Combine(tempFolder, fileName);
-                    if (System.IO.File.Exists(filePath))
-                    {
-                        zip.CreateEntryFromFile(filePath, fileName);
-                    }
+                    string fileName = Path.GetFileName(filePath);
+                    zip.CreateEntryFromFile(filePath, fileName);
                 }
             }
 

@@ -1,8 +1,12 @@
 ﻿@model List<PdfReaderDemo.Models.SplitFileResult>
 
+@{
+    var folderId = ViewBag.FolderId as string;
+}
+
 <h2>Split PDFs</h2>
 
-<a class="btn btn-primary" href="@Url.Action("DownloadAll", "Pdf")">Download All</a>
+<a class="btn btn-primary" href="@Url.Action("DownloadAll", "Pdf", new { folderId = folderId })">Download All</a>
 <a class="btn btn-secondary" href="@Url.Action("Index", "Pdf")">Upload Another PDF</a>
 
 <table class="table mt-3">
@@ -20,7 +24,7 @@
                 <td>@file.FileName</td>
                 <td>@file.AccountCode</td>
                 <td>
-                    <a class="btn btn-sm btn-success" href="@Url.Action("Download", "Pdf", new { fileName = file.FileName })">Download</a>
+                    <a class="btn btn-sm btn-success" href="@Url.Action("Download", "Pdf", new { fileName = file.FileName, folderId = folderId })">Download</a>
                 </td>
             </tr>
         }
