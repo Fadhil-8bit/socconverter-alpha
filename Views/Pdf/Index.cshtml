@@ -1,0 +1,61 @@
+﻿@{
+    ViewData["Title"] = "Upload PDF";
+}
+
+<h2>Upload a PDF</h2>
+
+<form asp-action="Upload" asp-controller="Pdf" method="post" enctype="multipart/form-data">
+    <div class="form-group">
+        <label for="splitType">Select Split Type</label>
+        <select id="splitType" name="splitType" class="form-control">
+            <option value="SOA">Statement of Account (SOA)</option>
+            <option value="Invoice">Invoice</option>
+            <option value="DebtorCode">Overdue Account(OD)</option>
+        </select>
+    </div>
+
+    <div class="form-group mt-3">
+        <label for="pdfFile">Upload PDF</label>
+        <input type="file" id="pdfFile" name="pdfFile" class="form-control" accept=".pdf" required />
+    </div>
+
+    <div class="form-group mt-3">
+        <label for="customCode">Custom Code (4–8 digits)</label>
+        <input type="text" id="customCode" name="customCode" class="form-control"
+               pattern="\d{4,8}" required
+               placeholder="Enter..." />
+
+    </div>
+
+    <button type="submit" class="btn btn-primary mt-3">Upload & Split</button>
+</form>
+
+<hr class="my-4" />
+
+<h4>Debugging Tool</h4>
+<form asp-action="PreviewPdf" asp-controller="Pdf" method="post" enctype="multipart/form-data">
+    <div class="form-group">
+        <label for="previewFile">Preview PDF Content</label>
+        <input type="file" id="previewFile" name="pdfFile" class="form-control" accept=".pdf" />
+    </div>
+    <button type="submit" class="btn btn-secondary mt-3">Preview PDF Text</button>
+</form>
+
+@if (ViewBag.Message != null)
+{
+    <p style="color:red">@ViewBag.Message</p>
+}
+
+@if (ViewBag.SplitFiles != null && ViewBag.SplitFiles.Count > 0)
+{
+    <h3 class="mt-4">Generated PDFs:</h3>
+    <ul class="list-group">
+        @foreach (var file in ViewBag.SplitFiles)
+        {
+            <li class="list-group-item d-flex justify-content-between align-items-center">
+                @file
+                <a class="btn btn-sm btn-success" href="@Url.Content("~/Temp/" + file)" target="_blank">Download</a>
+            </li>
+        }
+    </ul>
+}

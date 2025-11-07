@@ -1,0 +1,21 @@
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
+
+	<PropertyGroup>
+		<TargetFramework>net9.0</TargetFramework>
+		<Nullable>enable</Nullable>
+		<ImplicitUsings>enable</ImplicitUsings>
+	</PropertyGroup>
+
+	<ItemGroup>
+	  <None Remove=".dockerignore" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<PackageReference Include="itext.bouncy-castle-adapter" Version="9.3.0" />
+		<PackageReference Include="itext.bouncy-castle-fips-adapter" Version="9.3.0" />
+		<PackageReference Include="itext7" Version="9.3.0" />
+
+	</ItemGroup>
+
+
+</Project>

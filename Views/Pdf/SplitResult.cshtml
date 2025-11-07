@@ -1,0 +1,28 @@
+﻿@model List<PdfReaderDemo.Models.SplitFileResult>
+
+<h2>Split PDFs</h2>
+
+<a class="btn btn-primary" href="@Url.Action("DownloadAll", "Pdf")">Download All</a>
+<a class="btn btn-secondary" href="@Url.Action("Index", "Pdf")">Upload Another PDF</a>
+
+<table class="table mt-3">
+    <thead>
+        <tr>
+            <th>File Name</th>
+            <th>Account Code</th>
+            <th>Download</th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var file in Model)
+        {
+            <tr>
+                <td>@file.FileName</td>
+                <td>@file.AccountCode</td>
+                <td>
+                    <a class="btn btn-sm btn-success" href="@Url.Action("Download", "Pdf", new { fileName = file.FileName })">Download</a>
+                </td>
+            </tr>
+        }
+    </tbody>
+</table>

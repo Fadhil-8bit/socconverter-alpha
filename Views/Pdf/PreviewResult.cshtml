@@ -1,0 +1,18 @@
+﻿@{
+    ViewData["Title"] = "PDF Preview";
+}
+
+<h2>PDF Text Preview</h2>
+
+@if (ViewBag.PreviewText != null)
+{
+    <pre style="white-space: pre-wrap; background:#f4f4f4; padding:10px; border:1px solid #ccc;">
+        @ViewBag.PreviewText
+        </pre>
+}
+else
+{
+    <p>No text extracted.</p>
+}
+
+<a asp-action="Index" class="btn btn-primary mt-3">Back</a>
