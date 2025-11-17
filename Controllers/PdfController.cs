@@ -85,9 +85,12 @@ namespace PdfReaderDemo.Controllers
             // Ensure the shared temp folder exists (we won't clear it because uploads are stored per-folder)
             Directory.CreateDirectory(tempFolder);
 
-            // create a per-upload folder and save the original PDF there
+            // create a per-upload folder and save the original PDF to an 'original' subfolder
             string uploadFolder = _uploadFolderService.CreateUploadFolder();
-            var filePath = Path.Combine(uploadFolder, Path.GetFileName(pdfFile.FileName));
+            string originalSubfolder = Path.Combine(uploadFolder, "original");
+            Directory.CreateDirectory(originalSubfolder);
+            
+            var filePath = Path.Combine(originalSubfolder, Path.GetFileName(pdfFile.FileName));
             using (var stream = System.IO.File.Create(filePath))
             {
                 await pdfFile.CopyToAsync(stream);

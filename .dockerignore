@@ -2,3 +2,5 @@ Dockerfile
 .dockerignore
 bin/
 obj/
+wwwroot/Temp/
+*.user
