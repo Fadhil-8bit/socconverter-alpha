@@ -241,12 +241,20 @@ namespace PdfReaderDemo.Services
             {
                 string debtorCode = group.Key;
                 
-                // Use custom code if provided, otherwise use "OD" like in Python version
-                string shortCode = !string.IsNullOrEmpty(customCode) && Regex.IsMatch(customCode, @"^\d{4,8}$") 
-                    ? customCode 
-                    : "OD";
+                // Always include the literal "OD" token. If a numeric customCode is provided,
+                // append it after OD, separated by spaces. Examples:
+                //   "DEBTORCODE OD.pdf"
+                //   "DEBTORCODE OD 1234.pdf"
+                string odToken = "OD";
+                string sanitizedCustom = "";
+                if (!string.IsNullOrEmpty(customCode) && Regex.IsMatch(customCode, @"^\d{4,8}$"))
+                {
+                    sanitizedCustom = customCode.Trim();
+                }
 
-                string outputFileName = $"{debtorCode} {shortCode}.pdf";
+                string outputFileName = string.IsNullOrEmpty(sanitizedCustom)
+                    ? $"{debtorCode} {odToken}.pdf"
+                    : $"{debtorCode} {odToken} {sanitizedCustom}.pdf";
                 string filePath = Path.Combine(wwwRoot, outputFileName);
 
                 using var pdfWriter = new PdfWriter(filePath);
