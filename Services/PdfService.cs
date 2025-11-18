@@ -7,16 +7,22 @@ namespace PdfReaderDemo.Services
 {
     public class PdfService
     {
-        // Compiled regex patterns with timeout to prevent ReDoS attacks
-        private static readonly Regex DebtorCodeRegex = new(@"Debtor Code\s*:\s*([A-Z0-9]+-[A-Z0-9]+)", 
-            RegexOptions.IgnoreCase | RegexOptions.Compiled, TimeSpan.FromMilliseconds(500));
+        #region Regex Patterns
         
+        // Compiled regex patterns with timeout to prevent ReDoS attacks
+        
+        // Common validation patterns
+        private static readonly Regex CustomCodeValidationRegex = new(@"^\d{4,8}$", 
+            RegexOptions.Compiled, TimeSpan.FromMilliseconds(500));
+        
+        // SOA-specific patterns
         private static readonly Regex SoaDateRegex = new(@"Statement\s*of\s*Account\s*as\s*at\s*([0-9]{1,2}\s*[A-Za-z]+[.,]?\s*[0-9]{4})", 
             RegexOptions.IgnoreCase | RegexOptions.Compiled, TimeSpan.FromMilliseconds(500));
         
         private static readonly Regex AccountCodeRegex = new(@"Account\s*Code\s*:\s*([A-Za-z0-9]+\s*-\s*[A-Za-z0-9]+)", 
             RegexOptions.IgnoreCase | RegexOptions.Compiled, TimeSpan.FromMilliseconds(500));
         
+        // Invoice-specific patterns
         private static readonly Regex InvoiceCodeRegex = new(
             @"(Debtor\s*Code|Customer\s*Code|Account\s*Code)\s*:\s*([0-9]{3,5}\s*-\s*[A-Za-z0-9]{3,})|(?:Debtor\s*Code|Customer\s*Code|Account\s*Code)\s*:\s*[\r\n]+([0-9]{3,5}\s*-\s*[A-Za-z0-9]{3,})", 
             RegexOptions.IgnoreCase | RegexOptions.Compiled, TimeSpan.FromMilliseconds(500));
@@ -27,20 +33,13 @@ namespace PdfReaderDemo.Services
         private static readonly Regex PageNumberRegex = new(@"(Page|Pg)\s*No*\.?\s*[:\-]?\s*(Page\s*)?([0-9]+)(\s*(of|/)\s*[0-9]+)?", 
             RegexOptions.IgnoreCase | RegexOptions.Compiled, TimeSpan.FromMilliseconds(500));
         
-        private static readonly Regex CustomCodeValidationRegex = new(@"^\d{4,8}$", 
-            RegexOptions.Compiled, TimeSpan.FromMilliseconds(500));
+        // OD (Overdue) specific patterns
+        private static readonly Regex DebtorCodeRegex = new(@"Debtor Code\s*:\s*([A-Z0-9]+-[A-Z0-9]+)", 
+            RegexOptions.IgnoreCase | RegexOptions.Compiled, TimeSpan.FromMilliseconds(500));
+        
+        #endregion
 
-        public class DebtorRecord
-        {
-            public string DebtorCode { get; set; } = "";
-            public int PageNumber { get; set; }
-        }
-        public class SoaRecord
-        {
-            public string Date { get; set; } = "";
-            public string AccountCode { get; set; } = "";
-            public int PageNumber { get; set; }
-        }
+        #region SOA Operations
 
         public List<SoaRecord> ExtractSoaData(string filePath)
         {
@@ -80,7 +79,8 @@ namespace PdfReaderDemo.Services
 
             return records;
         }
-        public List<SplitFileResult> SplitPdfByAccountCode(
+
+        public List<SplitFileResult> SplitPdfBySoa(
             string originalPdfPath,
             List<SoaRecord> records,
             string customCode = "",
@@ -89,8 +89,7 @@ namespace PdfReaderDemo.Services
             var outputFiles = new List<SplitFileResult>();
             var grouped = records.GroupBy(r => new { r.AccountCode, r.Date });
 
-            // If an output folder is provided (per-upload), use it. Otherwise use shared wwwroot/Temp
-            string wwwRoot = !string.IsNullOrEmpty(outputFolder) ? outputFolder : Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "Temp");
+            string wwwRoot = GetOutputFolder(outputFolder);
             Directory.CreateDirectory(wwwRoot);
 
             using var pdfReader = new PdfReader(originalPdfPath);
@@ -101,30 +100,15 @@ namespace PdfReaderDemo.Services
                 string accountCode = group.Key.AccountCode;
                 string dateString = group.Key.Date;
 
-                string shortCode = "0000";
-                if (!string.IsNullOrEmpty(customCode) && CustomCodeValidationRegex.IsMatch(customCode))
-                {
-                    shortCode = customCode;
-                }
-                else if (DateTime.TryParse(dateString, out var parsedDate))
-                {
-                    shortCode = parsedDate.ToString("yyMM");
-                }
-
+                string shortCode = GetShortCode(customCode, dateString);
                 string outputFileName = $"{accountCode} SOA {shortCode}.pdf";
                 string filePath = Path.Combine(wwwRoot, outputFileName);
 
                 using var pdfWriter = new PdfWriter(filePath);
                 using var newPdf = new PdfDocument(pdfWriter);
 
-                var uniquePages = group.Select(r => r.PageNumber).Distinct().OrderBy(p => p).ToList();
-                foreach (int pageNum in uniquePages)
-                {
-                    if (pageNum <= pdfDoc.GetNumberOfPages())
-                    {
-                        pdfDoc.CopyPagesTo(pageNum, pageNum, newPdf);
-                    }
-                }
+                var pageNumbers = group.Select(r => r.PageNumber).ToList();
+                CopyPagesToNewPdf(pdfDoc, newPdf, pageNumbers);
 
                 newPdf.Close();
 
@@ -132,12 +116,18 @@ namespace PdfReaderDemo.Services
                 {
                     FileName = outputFileName,
                     Date = dateString,
-                    AccountCode = accountCode
+                    Code = accountCode,
+                    Type = DocumentType.SOA
                 });
             }
 
             return outputFiles;
-        }   
+        }
+
+        #endregion
+
+        #region Invoice Operations
+
         public List<InvoiceRecord> ExtractInvoiceData(string filePath)
         {
             var records = new List<InvoiceRecord>();
@@ -190,30 +180,83 @@ namespace PdfReaderDemo.Services
             return records;
         }
 
-        public List<DebtorRecord> 
-        ExtractDebtorData(string filePath)
+        public List<SplitFileResult> SplitPdfByInvoice(
+            string originalPdfPath,
+            List<InvoiceRecord> records,
+            string customCode = "",
+            string outputFolder = "")
         {
-            var records = new List<DebtorRecord>();
+            var outputFiles = new List<SplitFileResult>();
+            var grouped = records.GroupBy(r =>
+            {
+                if (DateTime.TryParse(r.Date, out var parsed))
+                    return new { r.DebtorCode, YearMonth = parsed.ToString("yyyyMM") };
+                else
+                    return new { r.DebtorCode, YearMonth = "0000" };
+            });
+
+            string wwwRoot = GetOutputFolder(outputFolder);
+            Directory.CreateDirectory(wwwRoot);
+
+            using var pdfReader = new PdfReader(originalPdfPath);
+            using var pdfDoc = new PdfDocument(pdfReader);
+
+            foreach (var group in grouped)
+            {
+                string debtorCode = group.Key.DebtorCode;
+                string yearMonth = group.Key.YearMonth;
+
+                string shortCode = GetShortCode(customCode, yearMonth, isYearMonth: true);
+                string outputFileName = $"{debtorCode} INV {shortCode}.pdf";
+                string filePath = Path.Combine(wwwRoot, outputFileName);
+
+                using var pdfWriter = new PdfWriter(filePath);
+                using var newPdf = new PdfDocument(pdfWriter);
+
+                var pageNumbers = group.Select(r => r.PageNumber).ToList();
+                CopyPagesToNewPdf(pdfDoc, newPdf, pageNumbers);
+
+                newPdf.Close();
+
+                outputFiles.Add(new SplitFileResult
+                {
+                    FileName = outputFileName,
+                    Date = group.Max(r => r.Date) ?? DateTime.Now.ToString("yyyy-MM-dd"),
+                    Code = debtorCode,
+                    Type = DocumentType.Invoice
+                });
+            }
+
+            return outputFiles;
+        }
+
+        #endregion
+
+        #region OD (Overdue) Operations
+
+        public List<OdRecord> ExtractOdData(string filePath)
+        {
+            var records = new List<OdRecord>();
 
             using var pdfReader = new PdfReader(filePath);
             using var pdfDoc = new PdfDocument(pdfReader);
 
             string currentDebtorCode = "UNCLASSIFIED";
-            
+
             for (int i = 1; i <= pdfDoc.GetNumberOfPages(); i++)
             {
                 string pageText = PdfTextExtractor.GetTextFromPage(pdfDoc.GetPage(i));
-                
+
                 var debtorMatch = DebtorCodeRegex.Match(pageText);
                 if (debtorMatch.Success)
                 {
                     currentDebtorCode = debtorMatch.Groups[1].Value.Trim();
                 }
-                
+
                 // Always add a record with the current debtor code
                 if (!records.Any(r => r.PageNumber == i && r.DebtorCode == currentDebtorCode))
                 {
-                    records.Add(new DebtorRecord
+                    records.Add(new OdRecord
                     {
                         PageNumber = i,
                         DebtorCode = currentDebtorCode
@@ -224,15 +267,16 @@ namespace PdfReaderDemo.Services
             return records;
         }
 
-        public List<SplitFileResult> SplitPdfByDebtorCode(
+        public List<SplitFileResult> SplitPdfByOd(
             string originalPdfPath,
-            List<DebtorRecord> records,
+            List<OdRecord> records,
             string customCode = "",
             string outputFolder = "")
         {
             var outputFiles = new List<SplitFileResult>();
             var grouped = records.GroupBy(r => r.DebtorCode);
-            string wwwRoot = !string.IsNullOrEmpty(outputFolder) ? outputFolder : Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "Temp");
+
+            string wwwRoot = GetOutputFolder(outputFolder);
             Directory.CreateDirectory(wwwRoot);
 
             using var pdfReader = new PdfReader(originalPdfPath);
@@ -241,7 +285,7 @@ namespace PdfReaderDemo.Services
             foreach (var group in grouped)
             {
                 string debtorCode = group.Key;
-                
+
                 // Always include the literal "OD" token. If a numeric customCode is provided,
                 // append it after OD, separated by spaces. Examples:
                 //   "DEBTORCODE OD.pdf"
@@ -261,89 +305,65 @@ namespace PdfReaderDemo.Services
                 using var pdfWriter = new PdfWriter(filePath);
                 using var newPdf = new PdfDocument(pdfWriter);
 
-                var uniquePages = group.Select(r => r.PageNumber).Distinct().OrderBy(p => p).ToList();
-                foreach (int pageNum in uniquePages)
-                {
-                    if (pageNum <= pdfDoc.GetNumberOfPages())
-                    {
-                        pdfDoc.CopyPagesTo(pageNum, pageNum, newPdf);
-                    }
-                }
+                var pageNumbers = group.Select(r => r.PageNumber).ToList();
+                CopyPagesToNewPdf(pdfDoc, newPdf, pageNumbers);
 
                 newPdf.Close();
 
                 outputFiles.Add(new SplitFileResult
                 {
                     FileName = outputFileName,
-                    AccountCode = debtorCode,
-                    Date = DateTime.Now.ToString("yyyy-MM-dd") // Use current date since debtor split doesn't track dates
+                    Code = debtorCode,
+                    Date = DateTime.Now.ToString("yyyy-MM-dd"), // Use current date since OD split doesn't track dates
+                    Type = DocumentType.Overdue
                 });
             }
 
             return outputFiles;
         }
 
-        public List<SplitFileResult> SplitPdfByInvoice(
-            string originalPdfPath,
-            List<InvoiceRecord> records,
-            string customCode = "",
-            string outputFolder = "")
+        #endregion
+
+        #region Common Helpers
+
+        private static string GetOutputFolder(string outputFolder)
         {
-            var outputFiles = new List<SplitFileResult>();
-            var grouped = records.GroupBy(r =>
+            return !string.IsNullOrEmpty(outputFolder)
+                ? outputFolder
+                : Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "Temp");
+        }
+
+        private static string GetShortCode(string customCode, string fallbackValue, bool isYearMonth = false)
+        {
+            if (!string.IsNullOrEmpty(customCode) && CustomCodeValidationRegex.IsMatch(customCode))
+                return customCode;
+
+            if (isYearMonth)
             {
-                if (DateTime.TryParse(r.Date, out var parsed))
-                    return new { r.DebtorCode, YearMonth = parsed.ToString("yyyyMM") };
-                else
-                    return new { r.DebtorCode, YearMonth = "0000" };
-            });
-            string wwwRoot = !string.IsNullOrEmpty(outputFolder) ? outputFolder : Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "Temp");
-            Directory.CreateDirectory(wwwRoot);
-
-            using var pdfReader = new PdfReader(originalPdfPath);
-            using var pdfDoc = new PdfDocument(pdfReader);
-
-            foreach (var group in grouped)
+                if (DateTime.TryParseExact(fallbackValue, "yyyyMM", null, System.Globalization.DateTimeStyles.None, out var parsedYM))
+                    return parsedYM.ToString("yyMM");
+            }
+            else
             {
-                string debtorCode = group.Key.DebtorCode;
-                string yearMonth = group.Key.YearMonth;
-
-                string shortCode = "0000";
-                if (!string.IsNullOrEmpty(customCode) && CustomCodeValidationRegex.IsMatch(customCode))
-                {
-                    shortCode = customCode;
-                }
-                else if (DateTime.TryParseExact(yearMonth, "yyyyMM", null, System.Globalization.DateTimeStyles.None, out var parsedYM))
-                {
-                    shortCode = parsedYM.ToString("yyMM");
-                }
-
-                string outputFileName = $"{debtorCode} INV {shortCode}.pdf";
-                string filePath = Path.Combine(wwwRoot, outputFileName);
-
-                using var pdfWriter = new PdfWriter(filePath);
-                using var newPdf = new PdfDocument(pdfWriter);
-
-                var uniquePages = group.Select(r => r.PageNumber).Distinct().OrderBy(p => p).ToList();
-                foreach (int pageNum in uniquePages)
-                {
-                    if (pageNum <= pdfDoc.GetNumberOfPages())
-                    {
-                        pdfDoc.CopyPagesTo(pageNum, pageNum, newPdf);
-                    }
-                }
-
-                newPdf.Close();
-
-                outputFiles.Add(new SplitFileResult
-                {
-                    FileName = outputFileName,
-                    Date = group.Max(r => r.Date) ?? DateTime.Now.ToString("yyyy-MM-dd"),
-                    AccountCode = debtorCode
-                });
+                if (DateTime.TryParse(fallbackValue, out var parsed))
+                    return parsed.ToString("yyMM");
             }
 
-            return outputFiles;
+            return "0000";
         }
+
+        private static void CopyPagesToNewPdf(PdfDocument sourcePdf, PdfDocument targetPdf, List<int> pageNumbers)
+        {
+            var uniquePages = pageNumbers.Distinct().OrderBy(p => p).ToList();
+            foreach (int pageNum in uniquePages)
+            {
+                if (pageNum <= sourcePdf.GetNumberOfPages())
+                {
+                    sourcePdf.CopyPagesTo(pageNum, pageNum, targetPdf);
+                }
+            }
+        }
+
+        #endregion
     }
 }

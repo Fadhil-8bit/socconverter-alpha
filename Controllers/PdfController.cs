@@ -125,7 +125,7 @@ namespace PdfReaderDemo.Controllers
                         return View("Index");
                     }
 
-                        splitFiles = _pdfService.SplitPdfByAccountCode(filePath, soaRecords, customCode, uploadFolder);
+                        splitFiles = _pdfService.SplitPdfBySoa(filePath, soaRecords, customCode, uploadFolder);
                 }
                 else if (splitType == "Invoice")
                 {
@@ -140,14 +140,14 @@ namespace PdfReaderDemo.Controllers
                 }
                 else if (splitType == "DebtorCode")
                 {
-                    var debtorRecords = _pdfService.ExtractDebtorData(filePath);
-                    if (debtorRecords.Count == 0)
+                    var odRecords = _pdfService.ExtractOdData(filePath);
+                    if (odRecords.Count == 0)
                     {
                         ViewBag.Message = "The uploaded PDF does not contain any Debtor Codes.";
                         return View("Index");
                     }
 
-                        splitFiles = _pdfService.SplitPdfByDebtorCode(filePath, debtorRecords, customCode, uploadFolder);
+                        splitFiles = _pdfService.SplitPdfByOd(filePath, odRecords, customCode, uploadFolder);
                 }
                 else
                 {

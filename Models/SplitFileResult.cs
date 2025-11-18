@@ -1,18 +1,17 @@
 ﻿namespace PdfReaderDemo.Models
 {
+    public enum DocumentType
+    {
+        SOA,
+        Invoice,
+        Overdue
+    }
+
     public class SplitFileResult
     {
         public string FileName { get; set; } = "";
         public string Date { get; set; } = "";
-        public string AccountCode { get; set; } = "";
+        public string Code { get; set; } = ""; // Generic: account code, debtor code, etc.
+        public DocumentType Type { get; set; }
     }
-
-    public class InvoiceRecord
-    {
-        public string DebtorCode { get; set; } = "";
-        public string Date { get; set; } = "";
-        public int PageNumber { get; set; }
-    }
-
 }
-    

@@ -13,7 +13,8 @@
     <thead>
         <tr>
             <th>File Name</th>
-            <th>Account Code</th>
+            <th>Code</th>
+            <th>Type</th>
             <th>Download</th>
         </tr>
     </thead>
@@ -22,7 +23,8 @@
         {
             <tr>
                 <td>@file.FileName</td>
-                <td>@file.AccountCode</td>
+                <td>@file.Code</td>
+                <td>@file.Type</td>
                 <td>
                     <a class="btn btn-sm btn-success" href="@Url.Action("Download", "Pdf", new { fileName = file.FileName, folderId = folderId })">Download</a>
                 </td>
