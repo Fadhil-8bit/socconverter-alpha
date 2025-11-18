@@ -3,6 +3,7 @@ using PdfReaderDemo.Services;
 using PdfReaderDemo.Models;
 using System.IO.Compression;
 using System.Text.RegularExpressions;
+using Microsoft.Extensions.Logging;
 
 namespace PdfReaderDemo.Controllers
 {
@@ -10,11 +11,13 @@ namespace PdfReaderDemo.Controllers
     {
         private readonly PdfService _pdfService;
         private readonly UploadFolderService _uploadFolderService;
+        private readonly ILogger<PdfController> _logger;
 
-        public PdfController(PdfService pdfService, UploadFolderService uploadFolderService)
+        public PdfController(PdfService pdfService, UploadFolderService uploadFolderService, ILogger<PdfController> logger)
         {
             _pdfService = pdfService;
             _uploadFolderService = uploadFolderService;
+            _logger = logger;
         }
 
         [HttpGet]
@@ -161,6 +164,8 @@ namespace PdfReaderDemo.Controllers
             }
             catch (Exception ex)
             {
+                _logger.LogError(ex, "Error processing PDF upload. SplitType: {SplitType}, FileName: {FileName}", 
+                    splitType, pdfFile.FileName);
                 ViewBag.Message = "Error processing PDF: " + ex.Message;
                 return View("Index");
             }
@@ -244,7 +249,10 @@ namespace PdfReaderDemo.Controllers
                 return View("Index");
             }
 
-            var filePath = Path.Combine(Path.GetTempPath(), pdfFile.FileName);
+            // Use upload folder service for preview files (will auto-cleanup after 24h)
+            string previewFolder = _uploadFolderService.CreateUploadFolder();
+            var filePath = Path.Combine(previewFolder, Path.GetFileName(pdfFile.FileName));
+            
             using (var stream = System.IO.File.Create(filePath))
             {
                 await pdfFile.CopyToAsync(stream);
@@ -264,9 +272,13 @@ namespace PdfReaderDemo.Controllers
                 }
 
                 ViewBag.PreviewText = string.Join("\n\n", pageTexts);
+                
+                _logger.LogInformation("PDF preview generated successfully. File: {FileName}, Pages: {PageCount}", 
+                    pdfFile.FileName, pdfDoc.GetNumberOfPages());
             }
             catch (Exception ex)
             {
+                _logger.LogError(ex, "Error previewing PDF. FileName: {FileName}", pdfFile.FileName);
                 ViewBag.Message = "Error reading PDF: " + ex.Message;
                 return View("Index");
             }
