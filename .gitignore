@@ -31,3 +31,8 @@ bld/
 [Oo]bj/
 [Ll]og/
 [Ll]ogs/
+
+# Log files
+*.log
+build.log
+run.log

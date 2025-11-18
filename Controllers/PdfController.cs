@@ -29,6 +29,9 @@ namespace PdfReaderDemo.Controllers
             if (string.IsNullOrEmpty(fileName))
                 return BadRequest();
 
+            // Sanitize fileName to prevent path traversal
+            fileName = Path.GetFileName(fileName);
+
             // Validate folderId (only alphanumeric, underscore, hyphen - prevent path traversal)
             if (!string.IsNullOrEmpty(folderId) && !System.Text.RegularExpressions.Regex.IsMatch(folderId, @"^[a-zA-Z0-9_\-]+$"))
                 return BadRequest("Invalid folder ID");
@@ -65,6 +68,14 @@ namespace PdfReaderDemo.Controllers
             if (pdfFile == null || pdfFile.Length == 0)
             {
                 ViewBag.Message = "Please upload a valid PDF file.";
+                return View("Index");
+            }
+
+            // Enforce file size limit (50MB)
+            const long MaxFileSize = 50 * 1024 * 1024;
+            if (pdfFile.Length > MaxFileSize)
+            {
+                ViewBag.Message = "File too large. Maximum 50MB allowed.";
                 return View("Index");
             }
 
@@ -207,8 +218,7 @@ namespace PdfReaderDemo.Controllers
                 }
             }
 
-            byte[] zipBytes = System.IO.File.ReadAllBytes(zipPath);
-            return File(zipBytes, "application/zip", zipFileName);
+            return PhysicalFile(zipPath, "application/zip", zipFileName);
         }
 
         [HttpPost]
@@ -217,6 +227,14 @@ namespace PdfReaderDemo.Controllers
             if (pdfFile == null || pdfFile.Length == 0)
             {
                 ViewBag.Message = "Please upload a valid PDF file.";
+                return View("Index");
+            }
+
+            // Enforce file size limit (50MB)
+            const long MaxFileSize = 50 * 1024 * 1024;
+            if (pdfFile.Length > MaxFileSize)
+            {
+                ViewBag.Message = "File too large. Maximum 50MB allowed.";
                 return View("Index");
             }
 
