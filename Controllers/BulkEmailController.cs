@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using PdfReaderDemo.Services;
 using PdfReaderDemo.Models.BulkEmail;
 using PdfReaderDemo.Models.Email;
+using Microsoft.AspNetCore.Hosting;
 
 namespace PdfReaderDemo.Controllers;
 
@@ -10,15 +11,18 @@ public class BulkEmailController : Controller
     private readonly IBulkEmailService _bulkEmailService;
     private readonly IConfiguration _configuration;
     private readonly ILogger<BulkEmailController> _logger;
+    private readonly IWebHostEnvironment _env;
 
     public BulkEmailController(
         IBulkEmailService bulkEmailService,
         IConfiguration configuration,
-        ILogger<BulkEmailController> logger)
+        ILogger<BulkEmailController> logger,
+        IWebHostEnvironment env)
     {
         _bulkEmailService = bulkEmailService;
         _configuration = configuration;
         _logger = logger;
+        _env = env;
     }
 
     /// <summary>
@@ -73,55 +77,79 @@ public class BulkEmailController : Controller
     [HttpGet]
     public IActionResult InitiateManual()
     {
-        return View();
+        // Enumerate session folders under wwwroot/Temp
+        var tempRoot = Path.Combine(_env.WebRootPath, "Temp");
+        Directory.CreateDirectory(tempRoot);
+        var sessionIds = Directory
+            .GetDirectories(tempRoot, "*", SearchOption.TopDirectoryOnly)
+            .Select(Path.GetFileName)
+            .Where(id => !string.IsNullOrEmpty(id))
+            .OrderByDescending(id => id)
+            .ToList()!;
+
+        var vm = new SelectSessionsViewModel
+        {
+            AvailableSessionIds = sessionIds
+        };
+
+        return View(vm);
     }
 
     /// <summary>
     /// Process manual session IDs
     /// </summary>
     [HttpPost]
-    public async Task<IActionResult> InitiateManual(string sessionIds)
+    public async Task<IActionResult> InitiateManual(SelectSessionsViewModel model)
     {
-        if (string.IsNullOrWhiteSpace(sessionIds))
+        if (model?.SelectedSessionIds == null || model.SelectedSessionIds.Count == 0)
         {
-            ViewBag.ErrorMessage = "Please enter at least one session ID";
-            return View();
+            ModelState.AddModelError(string.Empty, "Please select at least one session.");
+            // Rebuild available sessions
+            var tempRoot = Path.Combine(_env.WebRootPath, "Temp");
+            Directory.CreateDirectory(tempRoot);
+            model ??= new SelectSessionsViewModel();
+            model.AvailableSessionIds = Directory
+                .GetDirectories(tempRoot, "*", SearchOption.TopDirectoryOnly)
+                .Select(Path.GetFileName)
+                .Where(id => !string.IsNullOrEmpty(id))
+                .OrderByDescending(id => id)
+                .ToList()!;
+            return View(model);
         }
 
         try
         {
-            // Parse session IDs (comma or newline separated)
-            var sessionIdList = sessionIds
-                .Split(new[] { ',', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries)
-                .Select(s => s.Trim())
-                .Where(s => !string.IsNullOrEmpty(s))
-                .ToList();
-
-            if (sessionIdList.Count == 0)
-            {
-                ViewBag.ErrorMessage = "No valid session IDs found";
-                return View();
-            }
-
-            // Prepare bulk email session
-            var bulkSession = await _bulkEmailService.PrepareBulkEmailAsync(sessionIdList);
-
+            var bulkSession = await _bulkEmailService.PrepareBulkEmailAsync(model.SelectedSessionIds);
             if (bulkSession.TotalDebtors == 0)
             {
-                ViewBag.ErrorMessage = "No PDF files found in the specified session folders";
-                return View();
+                ModelState.AddModelError(string.Empty, "No PDF files found in the selected sessions.");
+                // reload available list
+                var tempRoot = Path.Combine(_env.WebRootPath, "Temp");
+                model.AvailableSessionIds = Directory
+                    .GetDirectories(tempRoot, "*", SearchOption.TopDirectoryOnly)
+                    .Select(Path.GetFileName)
+                    .Where(id => !string.IsNullOrEmpty(id))
+                    .OrderByDescending(id => id)
+                    .ToList()!;
+                return View(model);
             }
 
-            // Store session ID (best-effort)
             TempData["BulkSessionId"] = bulkSession.SessionId;
-
             return RedirectToAction("Preview", new { sid = bulkSession.SessionId });
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error initiating manual bulk email");
-            ViewBag.ErrorMessage = $"Error preparing bulk email: {ex.Message}";
-            return View();
+            _logger.LogError(ex, "Error initiating manual bulk email with selected sessions");
+            ModelState.AddModelError(string.Empty, $"Error preparing bulk email: {ex.Message}");
+            // reload available list
+            var tempRoot = Path.Combine(_env.WebRootPath, "Temp");
+            model.AvailableSessionIds = Directory
+                .GetDirectories(tempRoot, "*", SearchOption.TopDirectoryOnly)
+                .Select(Path.GetFileName)
+                .Where(id => !string.IsNullOrEmpty(id))
+                .OrderByDescending(id => id)
+                .ToList()!;
+            return View(model);
         }
     }
 
