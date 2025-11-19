@@ -52,11 +52,12 @@ public class BulkEmailController : Controller
                 return RedirectToAction("Index", "Pdf");
             }
 
-            // Store session ID in TempData
+            // Store session ID for next request (best-effort)
             TempData["BulkSessionId"] = bulkSession.SessionId;
 
             _logger.LogInformation("Redirecting to Preview with session ID: {SessionId}", bulkSession.SessionId);
-            return RedirectToAction("Preview");
+            // Also pass sid via query to avoid TempData dependency
+            return RedirectToAction("Preview", new { sid = bulkSession.SessionId });
         }
         catch (Exception ex)
         {
@@ -111,10 +112,10 @@ public class BulkEmailController : Controller
                 return View();
             }
 
-            // Store session ID in TempData
+            // Store session ID (best-effort)
             TempData["BulkSessionId"] = bulkSession.SessionId;
 
-            return RedirectToAction("Preview");
+            return RedirectToAction("Preview", new { sid = bulkSession.SessionId });
         }
         catch (Exception ex)
         {
@@ -128,14 +129,19 @@ public class BulkEmailController : Controller
     /// Step 2: Preview grouped files and edit email addresses
     /// </summary>
     [HttpGet]
-    public async Task<IActionResult> Preview()
+    public async Task<IActionResult> Preview(string? sid = null)
     {
-        // Try to get session ID from TempData first
-        var sessionId = TempData.Peek("BulkSessionId") as string;
+        string? sessionId = sid;
+
+        // If sid not provided, fall back to TempData
+        if (string.IsNullOrEmpty(sessionId))
+        {
+            sessionId = TempData.Peek("BulkSessionId") as string;
+        }
 
         if (string.IsNullOrEmpty(sessionId))
         {
-            _logger.LogWarning("Preview called without BulkSessionId in TempData");
+            _logger.LogWarning("Preview called without BulkSessionId in query or TempData");
             TempData["ErrorMessage"] = "Session expired. Please start again by clicking 'Send Bulk Email' button on the split result page.";
             return RedirectToAction("Index", "Pdf");
         }
@@ -151,11 +157,12 @@ public class BulkEmailController : Controller
             return RedirectToAction("Index", "Pdf");
         }
 
-        // Keep TempData for potential POST back
+        // Keep TempData and also refresh it from sid for subsequent requests
+        TempData["BulkSessionId"] = session.SessionId;
         TempData.Keep("BulkSessionId");
         
         // Also pass via ViewBag as backup
-        ViewBag.BulkSessionId = sessionId;
+        ViewBag.BulkSessionId = session.SessionId;
 
         _logger.LogInformation("Preview loaded successfully. Debtors: {DebtorCount}, Files: {FileCount}", 
             session.TotalDebtors, session.TotalFiles);
@@ -226,7 +233,7 @@ public class BulkEmailController : Controller
 
             // Reload session for display
             TempData["BulkSessionId"] = sessionId;
-            return RedirectToAction("Preview");
+            return RedirectToAction("Preview", new { sid = sessionId });
         }
     }
 }
