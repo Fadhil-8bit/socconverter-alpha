@@ -1,0 +1,53 @@
+@{
+    ViewData["Title"] = "Bulk Email - Manual Entry";
+}
+
+<div class="container mt-4">
+    <h2>Bulk Email Merger - Manual Session Entry</h2>
+    <p class="text-muted">Enter multiple session IDs to merge PDFs from different uploads.</p>
+
+    @if (!string.IsNullOrEmpty(ViewBag.ErrorMessage))
+    {
+        <div class="alert alert-danger" role="alert">
+            @ViewBag.ErrorMessage
+        </div>
+    }
+
+    <form method="post" asp-action="InitiateManual" class="mt-4">
+        <div class="mb-3">
+            <label for="sessionIds" class="form-label">Session IDs</label>
+            <textarea class="form-control" id="sessionIds" name="sessionIds" rows="6" 
+                      placeholder="Enter session IDs, one per line or comma-separated&#10;Example:&#10;upload-abc123-20250118&#10;upload-def456-20250118" required></textarea>
+            <div class="form-text">
+                Enter the session folder IDs from <code>wwwroot/Temp/</code>. You can find these in the URL after splitting PDFs.
+            </div>
+        </div>
+
+        <div class="mb-3">
+            <button type="submit" class="btn btn-primary">
+                <i class="bi bi-search"></i> Scan and Group Files
+            </button>
+            <a href="@Url.Action("Index", "Pdf")" class="btn btn-secondary">Cancel</a>
+        </div>
+    </form>
+
+    <div class="card mt-4">
+        <div class="card-header">
+            <h5>How It Works</h5>
+        </div>
+        <div class="card-body">
+            <ol>
+                <li>Upload and split PDFs normally using the main page</li>
+                <li>Note the session folder IDs from multiple uploads</li>
+                <li>Enter those session IDs here to merge them into a single bulk email operation</li>
+                <li>The system will scan all folders and group files by <strong>Debtor Code</strong></li>
+                <li>Preview grouped files and set email addresses</li>
+                <li>Send all emails at once</li>
+            </ol>
+
+            <div class="alert alert-info mt-3">
+                <strong>Tip:</strong> For single-session bulk emails, use the "Send Bulk Email" button on the Split Result page instead.
+            </div>
+        </div>
+    </div>
+</div>

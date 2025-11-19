@@ -1,0 +1,265 @@
+using PdfReaderDemo.Models;
+using PdfReaderDemo.Models.BulkEmail;
+using PdfReaderDemo.Models.Email;
+using System.Collections.Concurrent;
+using System.Text.RegularExpressions;
+
+namespace PdfReaderDemo.Services;
+
+/// <summary>
+/// Implementation of bulk email service for grouping and sending PDFs by debtor
+/// </summary>
+public class BulkEmailService : IBulkEmailService
+{
+    private readonly IEmailSender _emailSender;
+    private readonly IWebHostEnvironment _environment;
+    private readonly ConcurrentDictionary<string, BulkEmailSession> _sessions;
+
+    // Regex pattern to extract debtor code from filename
+    // Matches patterns like: "A123-XXX", "12345-ABC", etc. (digits/letters + dash + alphanumeric)
+    private static readonly Regex DebtorCodePattern = new(
+        @"^([A-Z0-9]{3,5}-[A-Z0-9]{3,})",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled,
+        TimeSpan.FromMilliseconds(500)
+    );
+
+    public BulkEmailService(IEmailSender emailSender, IWebHostEnvironment environment)
+    {
+        _emailSender = emailSender;
+        _environment = environment;
+        _sessions = new ConcurrentDictionary<string, BulkEmailSession>();
+    }
+
+    public async Task<BulkEmailSession> PrepareBulkEmailAsync(List<string> sessionIds)
+    {
+        var bulkSession = new BulkEmailSession
+        {
+            SourceSessionIds = sessionIds,
+            Status = BulkEmailStatus.Draft
+        };
+
+        var attachmentsByDebtor = new Dictionary<string, List<AttachmentFile>>();
+
+        // Scan each session folder
+        foreach (var sessionId in sessionIds)
+        {
+            var sessionPath = Path.Combine(_environment.WebRootPath, "Temp", sessionId);
+
+            if (!Directory.Exists(sessionPath))
+            {
+                continue; // Skip non-existent sessions
+            }
+
+            // Get all PDF files, excluding the "original" subfolder
+            var pdfFiles = Directory.GetFiles(sessionPath, "*.pdf", SearchOption.TopDirectoryOnly);
+
+            foreach (var filePath in pdfFiles)
+            {
+                var fileName = Path.GetFileName(filePath);
+
+                // Skip files in "original" subfolder if they somehow got included
+                if (filePath.Contains(Path.Combine(sessionPath, "original"), StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                // Extract debtor code
+                var debtorCode = ExtractDebtorCodeFromFileName(fileName);
+                if (string.IsNullOrEmpty(debtorCode))
+                {
+                    debtorCode = "UNCLASSIFIED";
+                }
+
+                // Determine document type from filename
+                var docType = DetermineDocumentType(fileName);
+
+                // Create attachment file
+                var fileInfo = new FileInfo(filePath);
+                var attachment = new AttachmentFile
+                {
+                    FileName = fileName,
+                    FilePath = filePath,
+                    SourceSessionId = sessionId,
+                    RelativeSessionPath = Path.Combine(sessionId, fileName),
+                    Type = docType,
+                    SizeBytes = fileInfo.Length,
+                    FoundDate = DateTime.UtcNow
+                };
+
+                // Group by debtor code
+                if (!attachmentsByDebtor.ContainsKey(debtorCode))
+                {
+                    attachmentsByDebtor[debtorCode] = new List<AttachmentFile>();
+                }
+
+                attachmentsByDebtor[debtorCode].Add(attachment);
+            }
+        }
+
+        // Create debtor email groups
+        foreach (var kvp in attachmentsByDebtor)
+        {
+            bulkSession.DebtorGroups.Add(new DebtorEmailGroup
+            {
+                DebtorCode = kvp.Key,
+                Attachments = kvp.Value,
+                EmailAddress = "" // Will be set by user or looked up
+            });
+        }
+
+        bulkSession.Status = BulkEmailStatus.Previewing;
+
+        // Store session
+        _sessions[bulkSession.SessionId] = bulkSession;
+
+        return await Task.FromResult(bulkSession);
+    }
+
+    public async Task<BulkEmailResult> SendBulkEmailsAsync(
+        string bulkSessionId,
+        string subject,
+        string bodyTemplate,
+        EmailOptions options)
+    {
+        var result = new BulkEmailResult
+        {
+            StartedAt = DateTime.UtcNow
+        };
+
+        // Load session
+        if (!_sessions.TryGetValue(bulkSessionId, out var session))
+        {
+            result.GeneralError = "Session not found";
+            result.CompletedAt = DateTime.UtcNow;
+            return result;
+        }
+
+        session.Status = BulkEmailStatus.Sending;
+        result.TotalAttempted = session.DebtorGroups.Count;
+
+        // Send email to each debtor
+        foreach (var group in session.DebtorGroups)
+        {
+            try
+            {
+                // Validate email address
+                if (string.IsNullOrWhiteSpace(group.EmailAddress))
+                {
+                    result.FailedDebtorCodes.Add(group.DebtorCode);
+                    result.FailureDetails[group.DebtorCode] = "Email address is empty";
+                    continue;
+                }
+
+                // Check attachment size
+                var totalSizeMB = group.TotalSizeBytes / (1024.0 * 1024.0);
+                if (totalSizeMB > options.MaxAttachmentSizeMB)
+                {
+                    result.FailedDebtorCodes.Add(group.DebtorCode);
+                    result.FailureDetails[group.DebtorCode] = $"Total attachment size ({totalSizeMB:F1} MB) exceeds limit ({options.MaxAttachmentSizeMB} MB)";
+                    continue;
+                }
+
+                // Prepare attachments
+                var emailAttachments = group.Attachments
+                    .Select(a => EmailAttachment.FromFile(a.FilePath))
+                    .ToList();
+
+                // Replace placeholders in subject and body
+                var personalizedSubject = ReplacePlaceholders(subject, group, options.Placeholders);
+                var personalizedBody = ReplacePlaceholders(bodyTemplate, group, options.Placeholders);
+
+                // Send email
+                await _emailSender.SendEmailWithAttachmentsAsync(
+                    group.EmailAddress,
+                    personalizedSubject,
+                    personalizedBody,
+                    emailAttachments,
+                    options
+                );
+
+                result.SuccessCount++;
+            }
+            catch (Exception ex)
+            {
+                result.FailedDebtorCodes.Add(group.DebtorCode);
+                result.FailureDetails[group.DebtorCode] = ex.Message;
+            }
+        }
+
+        session.Status = result.IsSuccess ? BulkEmailStatus.Completed : BulkEmailStatus.Failed;
+        session.CompletedAt = DateTime.UtcNow;
+        result.CompletedAt = DateTime.UtcNow;
+
+        return result;
+    }
+
+    public Task<BulkEmailSession?> GetSessionAsync(string sessionId)
+    {
+        _sessions.TryGetValue(sessionId, out var session);
+        return Task.FromResult(session);
+    }
+
+    public Task<bool> UpdateEmailAddressesAsync(string sessionId, Dictionary<string, string> emailMappings)
+    {
+        if (!_sessions.TryGetValue(sessionId, out var session))
+        {
+            return Task.FromResult(false);
+        }
+
+        foreach (var group in session.DebtorGroups)
+        {
+            if (emailMappings.ContainsKey(group.DebtorCode))
+            {
+                group.EmailAddress = emailMappings[group.DebtorCode];
+            }
+        }
+
+        return Task.FromResult(true);
+    }
+
+    public string? ExtractDebtorCodeFromFileName(string fileName)
+    {
+        var match = DebtorCodePattern.Match(fileName);
+        if (match.Success)
+        {
+            return match.Groups[1].Value.Replace(" ", "").Trim();
+        }
+
+        return null;
+    }
+
+    private static DocumentType DetermineDocumentType(string fileName)
+    {
+        var upper = fileName.ToUpperInvariant();
+
+        if (upper.Contains(" SOA ") || upper.Contains("_SOA_"))
+            return DocumentType.SOA;
+
+        if (upper.Contains(" INV ") || upper.Contains("_INV_") || upper.Contains("INVOICE"))
+            return DocumentType.Invoice;
+
+        if (upper.Contains(" OD ") || upper.Contains("_OD_") || upper.Contains("OVERDUE"))
+            return DocumentType.Overdue;
+
+        return DocumentType.Invoice; // Default
+    }
+
+    private static string ReplacePlaceholders(string template, DebtorEmailGroup group, Dictionary<string, string> customPlaceholders)
+    {
+        var result = template;
+
+        // Standard placeholders
+        result = result.Replace("{DebtorCode}", group.DebtorCode);
+        result = result.Replace("{DebtorName}", group.DebtorName ?? group.DebtorCode);
+        result = result.Replace("{FileCount}", group.TotalFileCount.ToString());
+        result = result.Replace("{TotalSize}", group.TotalSizeFormatted);
+
+        // Custom placeholders
+        foreach (var kvp in customPlaceholders)
+        {
+            result = result.Replace($"{{{kvp.Key}}}", kvp.Value);
+        }
+
+        return result;
+    }
+}

@@ -1,0 +1,176 @@
+@model PdfReaderDemo.Models.BulkEmail.BulkEmailSession
+
+@{
+    ViewData["Title"] = "Bulk Email - Preview";
+}
+
+<div class="container-fluid mt-4">
+    <h2>Bulk Email Preview</h2>
+    <p class="text-muted">Review grouped files and configure email settings before sending</p>
+
+    @if (TempData["ErrorMessage"] != null)
+    {
+        <div class="alert alert-danger" role="alert">
+            @TempData["ErrorMessage"]
+        </div>
+    }
+
+    <!-- Summary Panel -->
+    <div class="card mb-4">
+        <div class="card-header bg-primary text-white">
+            <h5 class="mb-0">Session Summary</h5>
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-3">
+                    <strong>Total Debtors:</strong> @Model.TotalDebtors
+                </div>
+                <div class="col-md-3">
+                    <strong>Total Files:</strong> @Model.TotalFiles
+                </div>
+                <div class="col-md-3">
+                    <strong>Total Size:</strong> @Model.TotalSizeFormatted
+                </div>
+                <div class="col-md-3">
+                    <strong>Status:</strong> <span class="badge bg-info">@Model.Status</span>
+                </div>
+            </div>
+            <div class="row mt-2">
+                <div class="col-md-12">
+                    <strong>Source Sessions:</strong> @string.Join(", ", Model.SourceSessionIds)
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <form method="post" asp-action="Send">
+        <input type="hidden" name="sessionId" value="@Model.SessionId" />
+
+        <!-- Debtor Groups Table -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">Debtor Email Groups</h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-striped table-hover">
+                        <thead>
+                            <tr>
+                                <th>Debtor Code</th>
+                                <th style="width: 300px;">Email Address</th>
+                                <th>Files</th>
+                                <th>Total Size</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @for (int i = 0; i < Model.DebtorGroups.Count; i++)
+                            {
+                                var group = Model.DebtorGroups[i];
+                                var rowId = $"files-{i}";
+                                <tr>
+                                    <td><strong>@group.DebtorCode</strong></td>
+                                    <td>
+                                        <input type="text" 
+                                               class="form-control form-control-sm email-input" 
+                                               name="emailAddresses" 
+                                               value="@group.EmailAddress" 
+                                               placeholder="Enter email address"
+                                               required />
+                                        <input type="hidden" name="debtorCodes" value="@group.DebtorCode" />
+                                    </td>
+                                    <td>@group.TotalFileCount</td>
+                                    <td>@group.TotalSizeFormatted</td>
+                                    <td>
+                                        <button type="button" class="btn btn-sm btn-outline-secondary" 
+                                                data-bs-toggle="collapse" 
+                                                data-bs-target="#@rowId">
+                                            <i class="bi bi-eye"></i> View Files
+                                        </button>
+                                    </td>
+                                </tr>
+                                <tr class="collapse" id="@rowId">
+                                    <td colspan="5">
+                                        <div class="p-3 bg-light">
+                                            <strong>Attachments (@group.Attachments.Count):</strong>
+                                            <ul class="list-unstyled mt-2">
+                                                @foreach (var file in group.Attachments)
+                                                {
+                                                    <li>
+                                                        <i class="bi bi-file-earmark-pdf text-danger"></i>
+                                                        @file.FileName 
+                                                        <span class="badge bg-secondary">@file.Type</span>
+                                                        <small class="text-muted">(@file.SizeFormatted)</small>
+                                                        <small class="text-info">from: @file.SourceSessionId</small>
+                                                    </li>
+                                                }
+                                            </ul>
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Email Template Section -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">Email Template</h5>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label for="subject" class="form-label">Subject Line</label>
+                    <input type="text" class="form-control" id="subject" name="subject" 
+                           value="Your Documents - {DebtorCode}" required />
+                    <div class="form-text">
+                        Available placeholders: <code>{DebtorCode}</code>, <code>{DebtorName}</code>, <code>{FileCount}</code>, <code>{TotalSize}</code>
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label for="bodyTemplate" class="form-label">Email Body (HTML)</label>
+                    <textarea class="form-control" id="bodyTemplate" name="bodyTemplate" rows="10" required>Dear Customer,
+
+Please find attached {FileCount} document(s) for account {DebtorCode}.
+
+Total size: {TotalSize}
+
+If you have any questions, please contact us.
+
+Best regards,
+Your Company</textarea>
+                    <div class="form-text">
+                        HTML is supported. Use the same placeholders as above.
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="mb-4">
+            <button type="submit" class="btn btn-success btn-lg">
+                <i class="bi bi-send"></i> Send All Emails
+            </button>
+            <a href="@Url.Action("Index", "Pdf")" class="btn btn-secondary btn-lg">Cancel</a>
+        </div>
+    </form>
+</div>
+
+@section Scripts {
+    <script>
+        // Auto-validate email addresses
+        document.querySelectorAll('.email-input').forEach(input => {
+            input.addEventListener('blur', function() {
+                const emailPattern = /^[^\s@@]+@@[^\s@@]+\.[^\s@@]+$/;
+                if (this.value && !emailPattern.test(this.value)) {
+                    this.classList.add('is-invalid');
+                } else {
+                    this.classList.remove('is-invalid');
+                }
+            });
+        });
+    </script>
+}

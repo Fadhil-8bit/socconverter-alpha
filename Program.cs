@@ -5,8 +5,14 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 builder.Services.AddControllersWithViews();
+
+// Register existing services
 builder.Services.AddSingleton<PdfService>();
 builder.Services.AddSingleton<UploadFolderService>();
+
+// Register bulk email services
+builder.Services.AddSingleton<IBulkEmailService, BulkEmailService>();
+builder.Services.AddSingleton<IEmailSender, EmailSenderService>();
 
 var app = builder.Build();
 
@@ -29,6 +35,5 @@ app.MapControllerRoute(
     name: "default",
     pattern: "{controller=Pdf}/{action=Index}/{id?}")
     .WithStaticAssets();
-
 
 app.Run();

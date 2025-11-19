@@ -14,10 +14,12 @@
 		<PackageReference Include="itext.bouncy-castle-adapter" Version="9.3.0" />
 		<PackageReference Include="itext.bouncy-castle-fips-adapter" Version="9.3.0" />
 		<PackageReference Include="itext7" Version="9.3.0" />
+		<PackageReference Include="MailKit" Version="4.14.1" />
 
 	</ItemGroup>
 
 	<ItemGroup>
+	  <Folder Include="Pages\BulkEmail\" />
 	  <Folder Include="wwwroot\Temp\" />
 	</ItemGroup>
 

@@ -1,0 +1,131 @@
+@model PdfReaderDemo.Models.BulkEmail.BulkEmailResult
+
+@{
+    ViewData["Title"] = "Bulk Email - Result";
+}
+
+<div class="container mt-4">
+    <h2>Bulk Email Send Result</h2>
+
+    @if (Model.IsSuccess)
+    {
+        <div class="alert alert-success" role="alert">
+            <h4 class="alert-heading"><i class="bi bi-check-circle"></i> Success!</h4>
+            <p>All @Model.SuccessCount email(s) were sent successfully.</p>
+        </div>
+    }
+    else
+    {
+        <div class="alert alert-warning" role="alert">
+            <h4 class="alert-heading"><i class="bi bi-exclamation-triangle"></i> Partial Success</h4>
+            <p>@Model.SuccessCount out of @Model.TotalAttempted email(s) were sent successfully.</p>
+            <p><strong>@Model.FailedCount email(s) failed.</strong></p>
+        </div>
+    }
+
+    @if (!string.IsNullOrEmpty(Model.GeneralError))
+    {
+        <div class="alert alert-danger" role="alert">
+            <strong>Error:</strong> @Model.GeneralError
+        </div>
+    }
+
+    <!-- Summary Card -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5 class="mb-0">Send Summary</h5>
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-3">
+                    <div class="card text-center">
+                        <div class="card-body">
+                            <h3 class="text-primary">@Model.TotalAttempted</h3>
+                            <p class="text-muted mb-0">Total Attempted</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card text-center">
+                        <div class="card-body">
+                            <h3 class="text-success">@Model.SuccessCount</h3>
+                            <p class="text-muted mb-0">Successful</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card text-center">
+                        <div class="card-body">
+                            <h3 class="text-danger">@Model.FailedCount</h3>
+                            <p class="text-muted mb-0">Failed</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card text-center">
+                        <div class="card-body">
+                            <h5>@(Model.Duration?.TotalSeconds.ToString("F1") ?? "N/A")s</h5>
+                            <p class="text-muted mb-0">Duration</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Failed Emails (if any) -->
+    @if (Model.FailedCount > 0)
+    {
+        <div class="card mb-4">
+            <div class="card-header bg-danger text-white">
+                <h5 class="mb-0">Failed Emails</h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>Debtor Code</th>
+                                <th>Error Message</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var failure in Model.FailureDetails)
+                            {
+                                <tr>
+                                    <td><strong>@failure.Key</strong></td>
+                                    <td><span class="text-danger">@failure.Value</span></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    }
+
+    <!-- Timing Information -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5 class="mb-0">Timing Details</h5>
+        </div>
+        <div class="card-body">
+            <p><strong>Started:</strong> @Model.StartedAt.ToString("yyyy-MM-dd HH:mm:ss")</p>
+            @if (Model.CompletedAt.HasValue)
+            {
+                <p><strong>Completed:</strong> @Model.CompletedAt.Value.ToString("yyyy-MM-dd HH:mm:ss")</p>
+                <p><strong>Duration:</strong> @Model.Duration?.TotalSeconds.ToString("F2") seconds</p>
+            }
+        </div>
+    </div>
+
+    <!-- Action Buttons -->
+    <div class="mb-4">
+        <a href="@Url.Action("InitiateManual", "BulkEmail")" class="btn btn-primary">
+            <i class="bi bi-arrow-repeat"></i> Start New Bulk Email
+        </a>
+        <a href="@Url.Action("Index", "Pdf")" class="btn btn-secondary">
+            <i class="bi bi-house"></i> Upload More PDFs
+        </a>
+    </div>
+</div>
