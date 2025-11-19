@@ -13,6 +13,7 @@ public class BulkEmailService : IBulkEmailService
 {
     private readonly IEmailSender _emailSender;
     private readonly IWebHostEnvironment _environment;
+    private readonly IContactProvider _contacts;
     private readonly ConcurrentDictionary<string, BulkEmailSession> _sessions;
 
     // Regex pattern to extract debtor code from filename
@@ -23,10 +24,11 @@ public class BulkEmailService : IBulkEmailService
         TimeSpan.FromMilliseconds(500)
     );
 
-    public BulkEmailService(IEmailSender emailSender, IWebHostEnvironment environment)
+    public BulkEmailService(IEmailSender emailSender, IWebHostEnvironment environment, IContactProvider contacts)
     {
         _emailSender = emailSender;
         _environment = environment;
+        _contacts = contacts;
         _sessions = new ConcurrentDictionary<string, BulkEmailSession>();
     }
 
@@ -96,14 +98,15 @@ public class BulkEmailService : IBulkEmailService
             }
         }
 
-        // Create debtor email groups
+        // Create debtor email groups (prefill email from contacts if available)
         foreach (var kvp in attachmentsByDebtor)
         {
+            var prefill = _contacts.GetEmailForDebtor(kvp.Key) ?? string.Empty;
             bulkSession.DebtorGroups.Add(new DebtorEmailGroup
             {
                 DebtorCode = kvp.Key,
                 Attachments = kvp.Value,
-                EmailAddress = "" // Will be set by user or looked up
+                EmailAddress = prefill
             });
         }
 

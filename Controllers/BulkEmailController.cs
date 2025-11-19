@@ -82,10 +82,11 @@ public class BulkEmailController : Controller
         Directory.CreateDirectory(tempRoot);
         var sessionIds = Directory
             .GetDirectories(tempRoot, "*", SearchOption.TopDirectoryOnly)
-            .Select(Path.GetFileName)
+            .Select(p => Path.GetFileName(p))
             .Where(id => !string.IsNullOrEmpty(id))
+            .Select(id => id!)
             .OrderByDescending(id => id)
-            .ToList()!;
+            .ToList();
 
         var vm = new SelectSessionsViewModel
         {
@@ -110,10 +111,11 @@ public class BulkEmailController : Controller
             model ??= new SelectSessionsViewModel();
             model.AvailableSessionIds = Directory
                 .GetDirectories(tempRoot, "*", SearchOption.TopDirectoryOnly)
-                .Select(Path.GetFileName)
+                .Select(p => Path.GetFileName(p))
                 .Where(id => !string.IsNullOrEmpty(id))
+                .Select(id => id!)
                 .OrderByDescending(id => id)
-                .ToList()!;
+                .ToList();
             return View(model);
         }
 
@@ -127,10 +129,11 @@ public class BulkEmailController : Controller
                 var tempRoot = Path.Combine(_env.WebRootPath, "Temp");
                 model.AvailableSessionIds = Directory
                     .GetDirectories(tempRoot, "*", SearchOption.TopDirectoryOnly)
-                    .Select(Path.GetFileName)
+                    .Select(p => Path.GetFileName(p))
                     .Where(id => !string.IsNullOrEmpty(id))
+                    .Select(id => id!)
                     .OrderByDescending(id => id)
-                    .ToList()!;
+                    .ToList();
                 return View(model);
             }
 
@@ -145,10 +148,11 @@ public class BulkEmailController : Controller
             var tempRoot = Path.Combine(_env.WebRootPath, "Temp");
             model.AvailableSessionIds = Directory
                 .GetDirectories(tempRoot, "*", SearchOption.TopDirectoryOnly)
-                .Select(Path.GetFileName)
+                .Select(p => Path.GetFileName(p))
                 .Where(id => !string.IsNullOrEmpty(id))
+                .Select(id => id!)
                 .OrderByDescending(id => id)
-                .ToList()!;
+                .ToList();
             return View(model);
         }
     }

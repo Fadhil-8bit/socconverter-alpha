@@ -10,6 +10,16 @@ builder.Services.AddControllersWithViews();
 builder.Services.AddSingleton<PdfService>();
 builder.Services.AddSingleton<UploadFolderService>();
 
+// Register contact provider: CSV if configured, else appsettings
+if (!string.IsNullOrWhiteSpace(builder.Configuration["Contacts:Csv:Path"]))
+{
+    builder.Services.AddSingleton<IContactProvider, CsvContactProvider>();
+}
+else
+{
+    builder.Services.AddSingleton<IContactProvider, AppSettingsContactProvider>();
+}
+
 // Register bulk email services
 builder.Services.AddSingleton<IBulkEmailService, BulkEmailService>();
 builder.Services.AddSingleton<IEmailSender, EmailSenderService>();
