@@ -7,12 +7,6 @@
 <div class="container mt-4">
     <h2>Bulk Email Send Result</h2>
 
-    <div class="mb-2">
-        <a class="btn btn-link px-0" href="@Url.Action("InitiateManual", "BulkEmail")">&larr; Back to Select Sessions</a>
-        <span class="mx-2 text-muted">|</span>
-        <a class="btn btn-link px-0" href="@Url.Action("Index", "Pdf")">&larr; Back to Upload</a>
-    </div>
-
     @if (Model.IsSuccess)
     {
         <div class="alert alert-success" role="alert">

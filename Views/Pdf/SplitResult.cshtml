@@ -6,20 +6,18 @@
 
 <h2>Split PDFs</h2>
 
-<div class="mb-3">
+<div class="d-flex flex-wrap gap-2 mb-3 align-items-center">
     <a class="btn btn-primary" href="@Url.Action("DownloadAll", "Pdf", new { folderId = folderId })">
         <i class="bi bi-download"></i> Download All
-    </a>
-    <a class="btn btn-success" href="@Url.Action("Initiate", "BulkEmail", new { folderId = folderId })">
-        <i class="bi bi-envelope"></i> Send Bulk Email
     </a>
     <a class="btn btn-secondary" href="@Url.Action("Index", "Pdf")">
         <i class="bi bi-upload"></i> Upload Another PDF
     </a>
-</div>
-
-<div class="alert alert-info">
-    <strong>New!</strong> Click <strong>Send Bulk Email</strong> to group these files by debtor code and send them via email.
+    <div class="ms-auto">
+        <a class="btn btn-outline-success" href="@Url.Action("InitiateManual", "BulkEmail")">
+            <i class="bi bi-collection"></i> Select Sessions
+        </a>
+    </div>
 </div>
 
 <table class="table mt-3">
