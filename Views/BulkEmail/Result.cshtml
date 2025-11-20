@@ -1,10 +1,17 @@
 @model PdfReaderDemo.Models.BulkEmail.BulkEmailResult
-
 @{
     ViewData["Title"] = "Bulk Email - Result";
+    var crumbs = new List<socconvertor.Models.BreadcrumbItem>
+    {
+        new socconvertor.Models.BreadcrumbItem { Text = "Dashboard", Controller = "Home", Action = "Index" },
+        new socconvertor.Models.BreadcrumbItem { Text = "Select Sessions", Controller = "BulkEmail", Action = "InitiateManual" },
+        new socconvertor.Models.BreadcrumbItem { Text = "Result", Active = true }
+    };
 }
 
-<div class="container mt-4">
+@await Html.PartialAsync("_Breadcrumb", crumbs)
+
+<div class="container mt-2">
     <h2>Bulk Email Send Result</h2>
 
     @if (Model.IsSuccess)

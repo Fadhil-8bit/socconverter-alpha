@@ -1,8 +1,15 @@
 ﻿@model List<PdfReaderDemo.Models.SplitFileResult>
-
 @{
     var folderId = ViewBag.FolderId as string;
+    var crumbs = new List<socconvertor.Models.BreadcrumbItem>
+    {
+        new socconvertor.Models.BreadcrumbItem { Text = "Dashboard", Controller = "Home", Action = "Index" },
+        new socconvertor.Models.BreadcrumbItem { Text = "Upload", Controller = "Pdf", Action = "Index" },
+        new socconvertor.Models.BreadcrumbItem { Text = "Split Result", Active = true }
+    };
 }
+
+@await Html.PartialAsync("_Breadcrumb", crumbs)
 
 <h2>Split PDFs</h2>
 

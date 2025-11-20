@@ -1,18 +1,19 @@
 @model PdfReaderDemo.Models.BulkEmail.BulkEmailSession
-
 @{
     ViewData["Title"] = "Bulk Email - Preview";
+    var crumbs = new List<socconvertor.Models.BreadcrumbItem>
+    {
+        new socconvertor.Models.BreadcrumbItem { Text = "Dashboard", Controller = "Home", Action = "Index" },
+        new socconvertor.Models.BreadcrumbItem { Text = "Select Sessions", Controller = "BulkEmail", Action = "InitiateManual" },
+        new socconvertor.Models.BreadcrumbItem { Text = "Preview", Active = true }
+    };
 }
 
-<div class="container-fluid mt-4">
+@await Html.PartialAsync("_Breadcrumb", crumbs)
+
+<div class="container-fluid mt-2">
     <h2>Bulk Email Preview</h2>
     <p class="text-muted">Review grouped files and configure email settings before sending</p>
-
-    <div class="mb-2">
-        <a class="btn btn-link px-0" href="@Url.Action("InitiateManual", "BulkEmail")">&larr; Back to Select Sessions</a>
-        <span class="mx-2 text-muted">|</span>
-        <a class="btn btn-link px-0" href="@Url.Action("Index", "Pdf")">&larr; Back to Upload</a>
-    </div>
 
     @if (TempData["ErrorMessage"] != null)
     {

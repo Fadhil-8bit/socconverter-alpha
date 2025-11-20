@@ -327,5 +327,38 @@ namespace PdfReaderDemo.Controllers
             ViewBag.FolderId = folderId;
             return View("SplitResult", results);
         }
+
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public IActionResult DeleteSession(string folderId)
+        {
+            if (string.IsNullOrWhiteSpace(folderId) || !Regex.IsMatch(folderId, "^[a-zA-Z0-9_\\-]+$"))
+            {
+                TempData["ErrorMessage"] = "Invalid session id.";
+                return RedirectToAction("Index", "Home");
+            }
+
+            try
+            {
+                var baseTemp = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "Temp");
+                var sessionPath = Path.Combine(baseTemp, folderId);
+                if (!Directory.Exists(sessionPath))
+                {
+                    TempData["ErrorMessage"] = "Session not found.";
+                }
+                else
+                {
+                    Directory.Delete(sessionPath, true);
+                    TempData["SuccessMessage"] = $"Session '{folderId}' deleted.";
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error deleting session {FolderId}", folderId);
+                TempData["ErrorMessage"] = $"Error deleting session: {ex.Message}";
+            }
+
+            return RedirectToAction("Index", "Home");
+        }
     }
 }

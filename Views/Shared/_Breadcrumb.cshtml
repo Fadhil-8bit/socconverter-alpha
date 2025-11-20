@@ -1,0 +1,23 @@
+@model IEnumerable<socconvertor.Models.BreadcrumbItem>
+@if (Model != null && Model.Any())
+{
+    <nav aria-label="breadcrumb" class="mb-3">
+        <ol class="breadcrumb">
+            @foreach (var item in Model)
+            {
+                if (item.Active)
+                {
+                    <li class="breadcrumb-item active" aria-current="page">@item.Text</li>
+                }
+                else if (!string.IsNullOrEmpty(item.Controller) && !string.IsNullOrEmpty(item.Action))
+                {
+                    <li class="breadcrumb-item"><a href="@Url.Action(item.Action, item.Controller)">@item.Text</a></li>
+                }
+                else
+                {
+                    <li class="breadcrumb-item">@item.Text</li>
+                }
+            }
+        </ol>
+    </nav>
+}
