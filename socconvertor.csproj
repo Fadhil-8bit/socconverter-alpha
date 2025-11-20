@@ -20,7 +20,6 @@
 	</ItemGroup>
 
 	<ItemGroup>
-	  <Folder Include="Pages\BulkEmail\" />
 	  <Folder Include="wwwroot\Temp\" />
 	</ItemGroup>
 
