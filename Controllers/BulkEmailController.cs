@@ -25,6 +25,59 @@ public class BulkEmailController : Controller
         _env = env;
     }
 
+    private static string GetDocTypeFromName(string fileName)
+    {
+        var upper = fileName.ToUpperInvariant();
+        if (upper.Contains(" SOA ") || upper.Contains("_SOA_")) return "SOA";
+        if (upper.Contains(" OD ") || upper.Contains("_OD_") || upper.Contains("OVERDUE")) return "OD";
+        if (upper.Contains(" INV ") || upper.Contains("_INV_") || upper.Contains("INVOICE")) return "INV";
+        return "INV";
+    }
+
+    private List<SessionInfo> GetSessionInfos()
+    {
+        var list = new List<SessionInfo>();
+        var tempRoot = Path.Combine(_env.WebRootPath, "Temp");
+        Directory.CreateDirectory(tempRoot);
+        foreach (var dir in Directory.GetDirectories(tempRoot, "*", SearchOption.TopDirectoryOnly))
+        {
+            var id = Path.GetFileName(dir);
+            if (string.IsNullOrEmpty(id)) continue;
+            var pdfs = Directory.GetFiles(dir, "*.pdf", SearchOption.TopDirectoryOnly);
+            var totalBytes = pdfs.Sum(f => new System.IO.FileInfo(f).Length);
+            int soa = 0, inv = 0, od = 0;
+            DateTime last;
+            if (pdfs.Length > 0)
+            {
+                last = pdfs.Select(f => System.IO.File.GetLastWriteTimeUtc(f)).Max();
+                foreach (var f in pdfs)
+                {
+                    var t = GetDocTypeFromName(Path.GetFileName(f));
+                    if (t == "SOA") soa++;
+                    else if (t == "OD") od++;
+                    else inv++;
+                }
+            }
+            else
+            {
+                last = Directory.GetLastWriteTimeUtc(dir);
+            }
+            list.Add(new SessionInfo
+            {
+                Id = id,
+                PdfCount = pdfs.Length,
+                TotalBytes = totalBytes,
+                LastModifiedUtc = last,
+                SoaCount = soa,
+                InvoiceCount = inv,
+                OverdueCount = od
+            });
+        }
+        return list
+            .OrderByDescending(s => s.LastModifiedUtc)
+            .ToList();
+    }
+
     /// <summary>
     /// Step 1: Initiate bulk email from a single session folder (called from SplitResult page)
     /// </summary>
@@ -77,22 +130,12 @@ public class BulkEmailController : Controller
     [HttpGet]
     public IActionResult InitiateManual()
     {
-        // Enumerate session folders under wwwroot/Temp
-        var tempRoot = Path.Combine(_env.WebRootPath, "Temp");
-        Directory.CreateDirectory(tempRoot);
-        var sessionIds = Directory
-            .GetDirectories(tempRoot, "*", SearchOption.TopDirectoryOnly)
-            .Select(p => Path.GetFileName(p))
-            .Where(id => !string.IsNullOrEmpty(id))
-            .Select(id => id!)
-            .OrderByDescending(id => id)
-            .ToList();
-
+        var infos = GetSessionInfos();
         var vm = new SelectSessionsViewModel
         {
-            AvailableSessionIds = sessionIds
+            AvailableSessionIds = infos.Select(i => i.Id).ToList(),
+            Sessions = infos
         };
-
         return View(vm);
     }
 
@@ -105,17 +148,10 @@ public class BulkEmailController : Controller
         if (model?.SelectedSessionIds == null || model.SelectedSessionIds.Count == 0)
         {
             ModelState.AddModelError(string.Empty, "Please select at least one session.");
-            // Rebuild available sessions
-            var tempRoot = Path.Combine(_env.WebRootPath, "Temp");
-            Directory.CreateDirectory(tempRoot);
+            var infos = GetSessionInfos();
             model ??= new SelectSessionsViewModel();
-            model.AvailableSessionIds = Directory
-                .GetDirectories(tempRoot, "*", SearchOption.TopDirectoryOnly)
-                .Select(p => Path.GetFileName(p))
-                .Where(id => !string.IsNullOrEmpty(id))
-                .Select(id => id!)
-                .OrderByDescending(id => id)
-                .ToList();
+            model.AvailableSessionIds = infos.Select(i => i.Id).ToList();
+            model.Sessions = infos;
             return View(model);
         }
 
@@ -125,15 +161,9 @@ public class BulkEmailController : Controller
             if (bulkSession.TotalDebtors == 0)
             {
                 ModelState.AddModelError(string.Empty, "No PDF files found in the selected sessions.");
-                // reload available list
-                var tempRoot = Path.Combine(_env.WebRootPath, "Temp");
-                model.AvailableSessionIds = Directory
-                    .GetDirectories(tempRoot, "*", SearchOption.TopDirectoryOnly)
-                    .Select(p => Path.GetFileName(p))
-                    .Where(id => !string.IsNullOrEmpty(id))
-                    .Select(id => id!)
-                    .OrderByDescending(id => id)
-                    .ToList();
+                var infos = GetSessionInfos();
+                model.AvailableSessionIds = infos.Select(i => i.Id).ToList();
+                model.Sessions = infos;
                 return View(model);
             }
 
@@ -144,15 +174,9 @@ public class BulkEmailController : Controller
         {
             _logger.LogError(ex, "Error initiating manual bulk email with selected sessions");
             ModelState.AddModelError(string.Empty, $"Error preparing bulk email: {ex.Message}");
-            // reload available list
-            var tempRoot = Path.Combine(_env.WebRootPath, "Temp");
-            model.AvailableSessionIds = Directory
-                .GetDirectories(tempRoot, "*", SearchOption.TopDirectoryOnly)
-                .Select(p => Path.GetFileName(p))
-                .Where(id => !string.IsNullOrEmpty(id))
-                .Select(id => id!)
-                .OrderByDescending(id => id)
-                .ToList();
+            var infos = GetSessionInfos();
+            model!.AvailableSessionIds = infos.Select(i => i.Id).ToList();
+            model.Sessions = infos;
             return View(model);
         }
     }

@@ -8,6 +8,12 @@
     <h2>Bulk Email Preview</h2>
     <p class="text-muted">Review grouped files and configure email settings before sending</p>
 
+    <div class="mb-2">
+        <a class="btn btn-link px-0" href="@Url.Action("InitiateManual", "BulkEmail")">&larr; Back to Select Sessions</a>
+        <span class="mx-2 text-muted">|</span>
+        <a class="btn btn-link px-0" href="@Url.Action("Index", "Pdf")">&larr; Back to Upload</a>
+    </div>
+
     @if (TempData["ErrorMessage"] != null)
     {
         <div class="alert alert-danger" role="alert">
@@ -71,7 +77,7 @@
                                 <tr>
                                     <td><strong>@group.DebtorCode</strong></td>
                                     <td>
-                                        <input type="text" 
+                                        <input type="email" 
                                                class="form-control form-control-sm email-input" 
                                                name="emailAddresses" 
                                                value="@group.EmailAddress" 
@@ -84,7 +90,7 @@
                                     <td>
                                         <button type="button" class="btn btn-sm btn-outline-secondary" 
                                                 data-bs-toggle="collapse" 
-                                                data-bs-target="#@rowId">
+                                                data-bs-target="#@rowId" aria-controls="@rowId" aria-expanded="false">
                                             <i class="bi bi-eye"></i> View Files
                                         </button>
                                     </td>
@@ -151,7 +157,7 @@ Your Company</textarea>
 
         <!-- Action Buttons -->
         <div class="mb-4">
-            <button type="submit" class="btn btn-success btn-lg">
+            <button id="sendAllBtn" type="submit" class="btn btn-success btn-lg">
                 <i class="bi bi-send"></i> Send All Emails
             </button>
             <a href="@Url.Action("Index", "Pdf")" class="btn btn-secondary btn-lg">Cancel</a>
@@ -161,11 +167,23 @@ Your Company</textarea>
 
 @section Scripts {
     <script>
-        // Auto-validate email addresses
+        // Prevent double submit and show spinner
+        (function () {
+            const form = document.querySelector('form[method="post"][action*="Send"], form[method="post"][asp-action="Send"]') || document.querySelector('form[method="post"]');
+            const btn = document.getElementById('sendAllBtn');
+            if (form && btn) {
+                form.addEventListener('submit', function () {
+                    btn.disabled = true;
+                    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Sending...';
+                });
+            }
+        })();
+
+        // Optional extra client-side email validation enhancement
         document.querySelectorAll('.email-input').forEach(input => {
-            input.addEventListener('blur', function() {
-                const emailPattern = /^[^\s@@]+@@[^\s@@]+\.[^\s@@]+$/;
-                if (this.value && !emailPattern.test(this.value)) {
+            input.addEventListener('blur', function () {
+                // HTML5 type=email provides basic validation; add class for styling
+                if (this.value && !this.checkValidity()) {
                     this.classList.add('is-invalid');
                 } else {
                     this.classList.remove('is-invalid');
