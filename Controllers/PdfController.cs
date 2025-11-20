@@ -285,5 +285,47 @@ namespace PdfReaderDemo.Controllers
 
             return View("PreviewResult");
         }
+
+        [HttpGet]
+        public IActionResult ViewSession(string folderId)
+        {
+            if (string.IsNullOrWhiteSpace(folderId) || !Regex.IsMatch(folderId, @"^[a-zA-Z0-9_\-]+$"))
+                return BadRequest("Invalid folder ID");
+
+            var baseTemp = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "Temp");
+            var sessionPath = Path.Combine(baseTemp, folderId);
+            if (!Directory.Exists(sessionPath))
+                return NotFound("Session folder not found");
+
+            var pdfFiles = Directory.GetFiles(sessionPath, "*.pdf", SearchOption.TopDirectoryOnly)
+                .Where(f => !f.Contains(Path.Combine(sessionPath, "original"), StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            var results = new List<SplitFileResult>();
+            foreach (var fullPath in pdfFiles)
+            {
+                var fileName = Path.GetFileName(fullPath);
+                // Attempt to infer document type from filename tokens
+                var upper = fileName.ToUpperInvariant();
+                DocumentType docType = DocumentType.Invoice;
+                if (upper.Contains(" SOA ") || upper.Contains("_SOA_")) docType = DocumentType.SOA;
+                else if (upper.Contains(" OD ") || upper.Contains("_OD_") || upper.Contains("OVERDUE")) docType = DocumentType.Overdue;
+                else if (upper.Contains(" INV ") || upper.Contains("_INV_") || upper.Contains("INVOICE")) docType = DocumentType.Invoice;
+
+                // Extract code (prefix until first space or token)
+                var code = fileName.Split(' ')[0];
+
+                results.Add(new SplitFileResult
+                {
+                    FileName = fileName,
+                    Code = code,
+                    Date = string.Empty,
+                    Type = docType
+                });
+            }
+
+            ViewBag.FolderId = folderId;
+            return View("SplitResult", results);
+        }
     }
 }
