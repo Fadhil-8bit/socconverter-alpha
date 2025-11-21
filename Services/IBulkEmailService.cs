@@ -1,7 +1,7 @@
-using PdfReaderDemo.Models.BulkEmail;
-using PdfReaderDemo.Models.Email;
+using socconvertor.Models.BulkEmail;
+using socconvertor.Models.Email;
 
-namespace PdfReaderDemo.Services;
+namespace socconvertor.Services;
 
 /// <summary>
 /// Service for managing bulk email operations with PDF attachments

@@ -1,4 +1,4 @@
-﻿namespace PdfReaderDemo.Models
+﻿namespace socconvertor.Models
 {
     public enum DocumentType
     {

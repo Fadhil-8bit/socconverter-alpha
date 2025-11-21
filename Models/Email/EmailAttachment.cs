@@ -1,4 +1,4 @@
-namespace PdfReaderDemo.Models.Email;
+namespace socconvertor.Models.Email;
 
 /// <summary>
 /// Represents an email attachment with file content

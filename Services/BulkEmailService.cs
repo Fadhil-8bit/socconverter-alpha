@@ -1,10 +1,10 @@
-using PdfReaderDemo.Models;
-using PdfReaderDemo.Models.BulkEmail;
-using PdfReaderDemo.Models.Email;
+using socconvertor.Models;
+using socconvertor.Models.BulkEmail;
+using socconvertor.Models.Email;
 using System.Collections.Concurrent;
 using System.Text.RegularExpressions;
 
-namespace PdfReaderDemo.Services;
+namespace socconvertor.Services;
 
 /// <summary>
 /// Implementation of bulk email service for grouping and sending PDFs by debtor

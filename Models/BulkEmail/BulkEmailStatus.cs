@@ -1,4 +1,4 @@
-namespace PdfReaderDemo.Models.BulkEmail;
+namespace socconvertor.Models.BulkEmail;
 
 /// <summary>
 /// Status of a bulk email operation

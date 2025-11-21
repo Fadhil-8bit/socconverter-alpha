@@ -1,4 +1,4 @@
-namespace PdfReaderDemo.Models.Home;
+namespace socconvertor.Models.Home;
 
 public class HomeDashboardViewModel
 {

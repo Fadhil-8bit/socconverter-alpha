@@ -1,4 +1,4 @@
-namespace PdfReaderDemo.Models.Email;
+namespace socconvertor.Models.Email;
 
 /// <summary>
 /// Configuration options for sending emails

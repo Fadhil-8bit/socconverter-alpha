@@ -1,7 +1,7 @@
 using System;
 using System.IO;
 
-namespace PdfReaderDemo.Services
+namespace socconvertor.Services
 {
     public class UploadFolderService
     {

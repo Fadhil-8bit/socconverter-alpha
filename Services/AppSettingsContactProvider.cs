@@ -1,6 +1,6 @@
 using Microsoft.Extensions.Configuration;
 
-namespace PdfReaderDemo.Services;
+namespace socconvertor.Services;
 
 public class AppSettingsContactProvider : IContactProvider
 {

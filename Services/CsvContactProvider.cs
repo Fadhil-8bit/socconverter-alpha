@@ -1,9 +1,8 @@
-using System.Globalization;
 using CsvHelper;
 using CsvHelper.Configuration;
-using Microsoft.Extensions.Configuration;
+using System.Globalization;
 
-namespace PdfReaderDemo.Services;
+namespace socconvertor.Services;
 
 public class CsvContactProvider : IContactProvider
 {

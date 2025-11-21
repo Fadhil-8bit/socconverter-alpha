@@ -1,4 +1,4 @@
-namespace PdfReaderDemo.Models.BulkEmail;
+namespace socconvertor.Models.BulkEmail;
 
 /// <summary>
 /// Represents a single PDF file attachment from a session folder

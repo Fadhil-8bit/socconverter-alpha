@@ -1,9 +1,9 @@
 ﻿using iText.Kernel.Pdf;
 using iText.Kernel.Pdf.Canvas.Parser;
-using PdfReaderDemo.Models;
+using socconvertor.Models;
 using System.Text.RegularExpressions;
 
-namespace PdfReaderDemo.Services
+namespace socconvertor.Services
 {
     public class PdfService
     {

@@ -1,4 +1,4 @@
-namespace PdfReaderDemo.Models.BulkEmail;
+namespace socconvertor.Models.BulkEmail;
 
 /// <summary>
 /// Represents a group of PDF attachments for a single debtor/customer

@@ -1,4 +1,4 @@
-using PdfReaderDemo.Services;
+using socconvertor.Services;
 
 
 var builder = WebApplication.CreateBuilder(args);
@@ -43,7 +43,7 @@ app.MapStaticAssets();
 
 app.MapControllerRoute(
     name: "default",
-    pattern: "{controller=Pdf}/{action=Index}/{id?}")
+    pattern: "{controller=Home}/{action=Index}/{id?}")
     .WithStaticAssets();
 
 app.Run();

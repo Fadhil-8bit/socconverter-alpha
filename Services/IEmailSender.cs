@@ -1,6 +1,6 @@
-using PdfReaderDemo.Models.Email;
+using socconvertor.Models.Email;
 
-namespace PdfReaderDemo.Services;
+namespace socconvertor.Services;
 
 /// <summary>
 /// Interface for sending emails with attachment support

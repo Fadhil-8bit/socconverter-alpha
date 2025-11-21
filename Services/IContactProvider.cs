@@ -1,4 +1,4 @@
-namespace PdfReaderDemo.Services;
+namespace socconvertor.Services;
 
 public interface IContactProvider
 {

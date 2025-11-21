@@ -1,10 +1,10 @@
 using Microsoft.AspNetCore.Mvc;
-using PdfReaderDemo.Services;
-using PdfReaderDemo.Models.BulkEmail;
-using PdfReaderDemo.Models.Email;
+using socconvertor.Services;
+using socconvertor.Models.BulkEmail;
+using socconvertor.Models.Email;
 using Microsoft.AspNetCore.Hosting;
 
-namespace PdfReaderDemo.Controllers;
+namespace socconvertor.Controllers;
 
 public class BulkEmailController : Controller
 {

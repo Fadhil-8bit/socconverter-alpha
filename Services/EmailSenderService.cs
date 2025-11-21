@@ -1,9 +1,9 @@
 using MailKit.Net.Smtp;
 using MailKit.Security;
 using MimeKit;
-using PdfReaderDemo.Models.Email;
+using socconvertor.Models.Email;
 
-namespace PdfReaderDemo.Services;
+namespace socconvertor.Services;
 
 /// <summary>
 /// Email sender implementation using MailKit for SMTP

@@ -1,4 +1,4 @@
-namespace PdfReaderDemo.Models.BulkEmail;
+namespace socconvertor.Models.BulkEmail;
 
 /// <summary>
 /// Represents a bulk email operation session, tracking all debtors and their grouped files

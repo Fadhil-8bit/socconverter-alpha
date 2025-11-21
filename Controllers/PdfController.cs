@@ -1,11 +1,11 @@
 ﻿using Microsoft.AspNetCore.Mvc;
-using PdfReaderDemo.Services;
-using PdfReaderDemo.Models;
+using socconvertor.Services;
+using socconvertor.Models;
 using System.IO.Compression;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 
-namespace PdfReaderDemo.Controllers
+namespace socconvertor.Controllers
 {
     public class PdfController : Controller
     {
