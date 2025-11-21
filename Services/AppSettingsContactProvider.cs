@@ -1,5 +1,3 @@
-using Microsoft.Extensions.Configuration;
-
 namespace socconvertor.Services;
 
 public class AppSettingsContactProvider : IContactProvider

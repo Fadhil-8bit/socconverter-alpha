@@ -3,6 +3,8 @@ using socconvertor.Services;
 using socconvertor.Models.BulkEmail;
 using socconvertor.Models.Email;
 using Microsoft.AspNetCore.Hosting;
+using System.Linq;
+using System;
 
 namespace socconvertor.Controllers;
 
@@ -37,13 +39,13 @@ public class BulkEmailController : Controller
     private List<SessionInfo> GetSessionInfos()
     {
         var list = new List<SessionInfo>();
-        var tempRoot = Path.Combine(_env.WebRootPath, "Temp");
-        Directory.CreateDirectory(tempRoot);
-        foreach (var dir in Directory.GetDirectories(tempRoot, "*", SearchOption.TopDirectoryOnly))
+        var tempRoot = Path.Combine(_env.WebRootPath ?? System.IO.Directory.GetCurrentDirectory(), "Temp");
+        System.IO.Directory.CreateDirectory(tempRoot);
+        foreach (var dir in System.IO.Directory.GetDirectories(tempRoot, "*", System.IO.SearchOption.TopDirectoryOnly))
         {
-            var id = Path.GetFileName(dir);
+            var id = System.IO.Path.GetFileName(dir);
             if (string.IsNullOrEmpty(id)) continue;
-            var pdfs = Directory.GetFiles(dir, "*.pdf", SearchOption.TopDirectoryOnly);
+            var pdfs = System.IO.Directory.GetFiles(dir, "*.pdf", System.IO.SearchOption.TopDirectoryOnly);
             var totalBytes = pdfs.Sum(f => new System.IO.FileInfo(f).Length);
             int soa = 0, inv = 0, od = 0;
             DateTime last;
@@ -52,7 +54,7 @@ public class BulkEmailController : Controller
                 last = pdfs.Select(f => System.IO.File.GetLastWriteTimeUtc(f)).Max();
                 foreach (var f in pdfs)
                 {
-                    var t = GetDocTypeFromName(Path.GetFileName(f));
+                    var t = GetDocTypeFromName(System.IO.Path.GetFileName(f));
                     if (t == "SOA") soa++;
                     else if (t == "OD") od++;
                     else inv++;
@@ -60,7 +62,7 @@ public class BulkEmailController : Controller
             }
             else
             {
-                last = Directory.GetLastWriteTimeUtc(dir);
+                last = System.IO.Directory.GetLastWriteTimeUtc(dir);
             }
             list.Add(new SessionInfo
             {
@@ -143,6 +145,7 @@ public class BulkEmailController : Controller
     /// Process manual session IDs
     /// </summary>
     [HttpPost]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> InitiateManual(SelectSessionsViewModel model)
     {
         if (model?.SelectedSessionIds == null || model.SelectedSessionIds.Count == 0)
@@ -230,15 +233,21 @@ public class BulkEmailController : Controller
     /// Step 3: Send bulk emails
     /// </summary>
     [HttpPost]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> Send(
         string sessionId,
-        List<string> debtorCodes,
-        List<string> emailAddresses,
+        List<string>? debtorCodes,
+        List<string>? emailAddresses,
         string subject,
         string bodyTemplate)
     {
         try
         {
+            debtorCodes ??= new List<string>();
+            emailAddresses ??= new List<string>();
+            subject ??= string.Empty;
+            bodyTemplate ??= string.Empty;
+
             // Load session
             var session = await _bulkEmailService.GetSessionAsync(sessionId);
 
@@ -252,10 +261,12 @@ public class BulkEmailController : Controller
             var emailMappings = new Dictionary<string, string>();
             for (int i = 0; i < debtorCodes.Count && i < emailAddresses.Count; i++)
             {
-                emailMappings[debtorCodes[i]] = emailAddresses[i];
+                if (!string.IsNullOrWhiteSpace(debtorCodes[i]) && !string.IsNullOrWhiteSpace(emailAddresses[i]))
+                    emailMappings[debtorCodes[i]] = emailAddresses[i];
             }
 
-            await _bulkEmailService.UpdateEmailAddressesAsync(sessionId, emailMappings);
+            if (emailMappings.Count > 0)
+                await _bulkEmailService.UpdateEmailAddressesAsync(sessionId, emailMappings);
 
             // Prepare email options
             var options = new EmailOptions
