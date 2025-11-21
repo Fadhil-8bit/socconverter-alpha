@@ -2,6 +2,7 @@ using System.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
 using socconvertor.Models;
 using socconvertor.Models.Home;
+using socconvertor.Helpers;
 
 namespace socconvertor.Controllers;
 
@@ -41,7 +42,7 @@ public class HomeController : Controller
             {
                 Id = id,
                 PdfCount = pdfs.Length,
-                TotalSizeFormatted = totalBytes < 1024 ? $"{totalBytes} B" : (totalBytes < 1024 * 1024 ? $"{totalBytes / 1024.0:F1} KB" : $"{totalBytes / (1024.0 * 1024.0):F1} MB"),
+                TotalSizeFormatted = FormatHelpers.FormatBytes(totalBytes),
                 LastModifiedUtc = last
             });
         }

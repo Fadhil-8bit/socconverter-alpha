@@ -1,5 +1,7 @@
 namespace socconvertor.Models.BulkEmail;
 
+using socconvertor.Helpers;
+
 /// <summary>
 /// Represents a single PDF file attachment from a session folder
 /// </summary>
@@ -43,13 +45,5 @@ public class AttachmentFile
     /// <summary>
     /// Human-readable file size (e.g., "1.2 MB")
     /// </summary>
-    public string SizeFormatted
-    {
-        get
-        {
-            if (SizeBytes < 1024) return $"{SizeBytes} B";
-            if (SizeBytes < 1024 * 1024) return $"{SizeBytes / 1024.0:F1} KB";
-            return $"{SizeBytes / (1024.0 * 1024.0):F1} MB";
-        }
-    }
+    public string SizeFormatted => FormatHelpers.FormatBytes(SizeBytes);
 }

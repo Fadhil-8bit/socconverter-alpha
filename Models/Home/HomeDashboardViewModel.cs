@@ -1,5 +1,7 @@
 namespace socconvertor.Models.Home;
 
+using socconvertor.Helpers;
+
 public class HomeDashboardViewModel
 {
     public int TotalSessions { get; set; }
@@ -7,16 +9,7 @@ public class HomeDashboardViewModel
     public long TotalBytes { get; set; }
     public List<HomeSessionItem> RecentSessions { get; set; } = new();
 
-    public string TotalSizeFormatted
-    {
-        get
-        {
-            var bytes = TotalBytes;
-            if (bytes < 1024) return $"{bytes} B";
-            if (bytes < 1024 * 1024) return $"{bytes / 1024.0:F1} KB";
-            return $"{bytes / (1024.0 * 1024.0):F1} MB";
-        }
-    }
+    public string TotalSizeFormatted => FormatHelpers.FormatBytes(TotalBytes);
 }
 
 public class HomeSessionItem

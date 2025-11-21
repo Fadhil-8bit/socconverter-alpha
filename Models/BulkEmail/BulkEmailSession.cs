@@ -1,5 +1,7 @@
 namespace socconvertor.Models.BulkEmail;
 
+using socconvertor.Helpers;
+
 /// <summary>
 /// Represents a bulk email operation session, tracking all debtors and their grouped files
 /// </summary>
@@ -48,17 +50,7 @@ public class BulkEmailSession
     /// <summary>
     /// Human-readable total size
     /// </summary>
-    public string TotalSizeFormatted
-    {
-        get
-        {
-            var bytes = TotalSizeBytes;
-            if (bytes < 1024) return $"{bytes} B";
-            if (bytes < 1024 * 1024) return $"{bytes / 1024.0:F1} KB";
-            if (bytes < 1024 * 1024 * 1024) return $"{bytes / (1024.0 * 1024.0):F1} MB";
-            return $"{bytes / (1024.0 * 1024.0 * 1024.0):F1} GB";
-        }
-    }
+    public string TotalSizeFormatted => FormatHelpers.FormatBytes(TotalSizeBytes);
 
     /// <summary>
     /// Error message if the session failed

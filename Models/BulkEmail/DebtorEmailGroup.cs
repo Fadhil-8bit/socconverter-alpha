@@ -1,5 +1,7 @@
 namespace socconvertor.Models.BulkEmail;
 
+using socconvertor.Helpers;
+
 /// <summary>
 /// Represents a group of PDF attachments for a single debtor/customer
 /// </summary>
@@ -38,14 +40,5 @@ public class DebtorEmailGroup
     /// <summary>
     /// Human-readable size (e.g., "2.3 MB")
     /// </summary>
-    public string TotalSizeFormatted
-    {
-        get
-        {
-            var bytes = TotalSizeBytes;
-            if (bytes < 1024) return $"{bytes} B";
-            if (bytes < 1024 * 1024) return $"{bytes / 1024.0:F1} KB";
-            return $"{bytes / (1024.0 * 1024.0):F1} MB";
-        }
-    }
+    public string TotalSizeFormatted => FormatHelpers.FormatBytes(TotalSizeBytes);
 }
