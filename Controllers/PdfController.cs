@@ -335,7 +335,8 @@ public class PdfController : Controller
         if (string.IsNullOrWhiteSpace(folderId) || !Regex.IsMatch(folderId, "^[a-zA-Z0-9_\\-]+$"))
         {
             TempData["ErrorMessage"] = "Invalid session id.";
-            return RedirectToAction("Index", "Home");
+            // Redirect back to select sessions page
+            return RedirectToAction("InitiateManual", "BulkEmail");
         }
 
         try
@@ -345,19 +346,21 @@ public class PdfController : Controller
             if (!Directory.Exists(sessionPath))
             {
                 TempData["ErrorMessage"] = "Session not found.";
+                return RedirectToAction("InitiateManual", "BulkEmail");
             }
             else
             {
                 Directory.Delete(sessionPath, true);
                 TempData["SuccessMessage"] = $"Session '{folderId}' deleted.";
+                // After deleting from split result, return to select sessions page
+                return RedirectToAction("InitiateManual", "BulkEmail");
             }
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error deleting session {FolderId}", folderId);
             TempData["ErrorMessage"] = $"Error deleting session: {ex.Message}";
+            return RedirectToAction("InitiateManual", "BulkEmail");
         }
-
-        return RedirectToAction("Index", "Home");
     }
 }
