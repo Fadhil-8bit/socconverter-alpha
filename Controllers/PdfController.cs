@@ -175,6 +175,16 @@ public class PdfController : Controller
             // Optionally delete original master file after successful split
             _ = Task.Run(async () => await DeleteOriginalWithRetriesAsync(filePath, originalSubfolder));
 
+            // After successful split, create origin marker so BulkEmail distinguishes source
+            try
+            {
+                System.IO.File.WriteAllText(Path.Combine(uploadFolder, ".origin.split"), DateTime.UtcNow.ToString("O"));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Unable to write origin marker for split folder {Folder}", uploadFolder);
+            }
+
             return View("SplitResult", splitFiles);
         }
         catch (Exception ex)
@@ -392,23 +402,13 @@ public class PdfController : Controller
         foreach (var fullPath in pdfFiles)
         {
             var fileName = Path.GetFileName(fullPath);
-            // Attempt to infer document type from filename tokens
             var upper = fileName.ToUpperInvariant();
-            DocumentType docType = DocumentType.Invoice;
+            DocumentType docType = DocumentType.Unknown;
             if (upper.Contains(" SOA ") || upper.Contains("_SOA_")) docType = DocumentType.SOA;
             else if (upper.Contains(" OD ") || upper.Contains("_OD_") || upper.Contains("OVERDUE")) docType = DocumentType.Overdue;
             else if (upper.Contains(" INV ") || upper.Contains("_INV_") || upper.Contains("INVOICE")) docType = DocumentType.Invoice;
-
-            // Extract code (prefix until first space or token)
             var code = fileName.Split(' ')[0];
-
-            results.Add(new SplitFileResult
-            {
-                FileName = fileName,
-                Code = code,
-                Date = string.Empty,
-                Type = docType
-            });
+            results.Add(new SplitFileResult { FileName = fileName, Code = code, Date = string.Empty, Type = docType });
         }
 
         ViewBag.FolderId = folderId;

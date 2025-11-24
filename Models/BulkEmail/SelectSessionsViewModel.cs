@@ -4,10 +4,9 @@ public class SelectSessionsViewModel
 {
     public List<string> AvailableSessionIds { get; set; } = new();
     public List<string> SelectedSessionIds { get; set; } = new();
-
     public List<SessionInfo> Sessions { get; set; } = new();
-
     public string? Query { get; set; }
+    public string? OriginFilter { get; set; } // optional filter: split | zip | all/empty
 }
 
 public class SessionInfo
@@ -16,10 +15,11 @@ public class SessionInfo
     public int PdfCount { get; set; }
     public long TotalBytes { get; set; }
     public DateTime LastModifiedUtc { get; set; }
-
     public int SoaCount { get; set; }
     public int InvoiceCount { get; set; }
     public int OverdueCount { get; set; }
+    public int UnknownCount { get; set; }
+    public string Origin { get; set; } = "unknown"; // split | zip | unknown
 
     public string TotalSizeFormatted
     {

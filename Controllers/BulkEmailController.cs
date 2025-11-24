@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Hosting;
 using System.Linq;
 using System;
 using System.IO.Compression;
+using System.Text.RegularExpressions;
 
 namespace socconvertor.Controllers;
 
@@ -37,7 +38,7 @@ public class BulkEmailController : Controller
         if (upper.Contains(" SOA ") || upper.Contains("_SOA_")) return "SOA";
         if (upper.Contains(" OD ") || upper.Contains("_OD_") || upper.Contains("OVERDUE")) return "OD";
         if (upper.Contains(" INV ") || upper.Contains("_INV_") || upper.Contains("INVOICE")) return "INV";
-        return "INV";
+        return "UNKNOWN";
     }
 
     private List<SessionInfo> GetSessionInfos()
@@ -51,7 +52,7 @@ public class BulkEmailController : Controller
             if (string.IsNullOrEmpty(id)) continue;
             var pdfs = System.IO.Directory.GetFiles(dir, "*.pdf", System.IO.SearchOption.TopDirectoryOnly);
             var totalBytes = pdfs.Sum(f => new System.IO.FileInfo(f).Length);
-            int soa = 0, inv = 0, od = 0;
+            int soa = 0, inv = 0, od = 0, unk = 0;
             DateTime last;
             if (pdfs.Length > 0)
             {
@@ -61,7 +62,8 @@ public class BulkEmailController : Controller
                     var t = GetDocTypeFromName(System.IO.Path.GetFileName(f));
                     if (t == "SOA") soa++;
                     else if (t == "OD") od++;
-                    else inv++;
+                    else if (t == "INV") inv++;
+                    else unk++;
                 }
             }
             else
@@ -76,58 +78,13 @@ public class BulkEmailController : Controller
                 LastModifiedUtc = last,
                 SoaCount = soa,
                 InvoiceCount = inv,
-                OverdueCount = od
+                OverdueCount = od,
+                UnknownCount = unk
             });
         }
         return list
             .OrderByDescending(s => s.LastModifiedUtc)
             .ToList();
-    }
-
-    /// <summary>
-    /// Step 1: Initiate bulk email from a single session folder (called from SplitResult page)
-    /// </summary>
-    [HttpGet]
-    public async Task<IActionResult> Initiate(string? folderId)
-    {
-        if (string.IsNullOrEmpty(folderId))
-        {
-            TempData["ErrorMessage"] = "No folder ID provided";
-            _logger.LogWarning("Bulk email initiate called without folderId");
-            return RedirectToAction("Index", "Pdf");
-        }
-
-        try
-        {
-            _logger.LogInformation("Initiating bulk email for folder: {FolderId}", folderId);
-            
-            // Prepare bulk email session from single folder
-            var sessionIds = new List<string> { folderId };
-            var bulkSession = await _bulkEmailService.PrepareBulkEmailAsync(sessionIds);
-
-            _logger.LogInformation("Bulk email scan completed. Debtors found: {DebtorCount}, Total files: {FileCount}", 
-                bulkSession.TotalDebtors, bulkSession.TotalFiles);
-
-            if (bulkSession.TotalDebtors == 0)
-            {
-                TempData["ErrorMessage"] = $"No PDF files found in session folder '{folderId}'. Make sure PDFs are in the main folder, not in /original/ subfolder.";
-                _logger.LogWarning("No debtors found in folder: {FolderId}", folderId);
-                return RedirectToAction("Index", "Pdf");
-            }
-
-            // Store session ID for next request (best-effort)
-            TempData["BulkSessionId"] = bulkSession.SessionId;
-
-            _logger.LogInformation("Redirecting to Preview with session ID: {SessionId}", bulkSession.SessionId);
-            // Also pass sid via query to avoid TempData dependency
-            return RedirectToAction("Preview", new { sid = bulkSession.SessionId });
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error initiating bulk email for folder: {FolderId}", folderId);
-            TempData["ErrorMessage"] = $"Error preparing bulk email: {ex.Message}";
-            return RedirectToAction("Index", "Pdf");
-        }
     }
 
     /// <summary>
@@ -173,8 +130,6 @@ public class BulkEmailController : Controller
                 model.Sessions = infos;
                 return View(model);
             }
-
-            TempData["BulkSessionId"] = bulkSession.SessionId;
             return RedirectToAction("Preview", new { sid = bulkSession.SessionId });
         }
         catch (Exception ex)
@@ -192,44 +147,24 @@ public class BulkEmailController : Controller
     /// Step 2: Preview grouped files and edit email addresses
     /// </summary>
     [HttpGet]
-    public async Task<IActionResult> Preview(string? sid = null)
+    public async Task<IActionResult> Preview(string sid)
     {
-        string? sessionId = sid;
-
-        // If sid not provided, fall back to TempData
-        if (string.IsNullOrEmpty(sessionId))
+        if (string.IsNullOrWhiteSpace(sid))
         {
-            sessionId = TempData.Peek("BulkSessionId") as string;
+            TempData["ErrorMessage"] = "Session id missing.";
+            return RedirectToAction("InitiateManual");
         }
 
-        if (string.IsNullOrEmpty(sessionId))
-        {
-            _logger.LogWarning("Preview called without BulkSessionId in query or TempData");
-            TempData["ErrorMessage"] = "Session expired. Please start again by clicking 'Send Bulk Email' button on the split result page.";
-            return RedirectToAction("Index", "Pdf");
-        }
-
-        _logger.LogInformation("Loading preview for session: {SessionId}", sessionId);
-
-        var session = await _bulkEmailService.GetSessionAsync(sessionId);
-
+        _logger.LogInformation("Loading preview for session: {SessionId}", sid);
+        var session = await _bulkEmailService.GetSessionAsync(sid);
         if (session == null)
         {
-            _logger.LogWarning("Session not found: {SessionId}", sessionId);
-            TempData["ErrorMessage"] = $"Session not found: {sessionId}. Please start again.";
-            return RedirectToAction("Index", "Pdf");
+            TempData["ErrorMessage"] = $"Session not found: {sid}";
+            return RedirectToAction("InitiateManual");
         }
 
-        // Keep TempData and also refresh it from sid for subsequent requests
-        TempData["BulkSessionId"] = session.SessionId;
-        TempData.Keep("BulkSessionId");
-        
-        // Also pass via ViewBag as backup
         ViewBag.BulkSessionId = session.SessionId;
-
-        _logger.LogInformation("Preview loaded successfully. Debtors: {DebtorCount}, Files: {FileCount}", 
-            session.TotalDebtors, session.TotalFiles);
-
+        _logger.LogInformation("Preview loaded. Debtors: {DebtorCount}, Files: {FileCount}", session.TotalDebtors, session.TotalFiles);
         return View(session);
     }
 
@@ -238,12 +173,7 @@ public class BulkEmailController : Controller
     /// </summary>
     [HttpPost]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> Send(
-        string sessionId,
-        List<string>? debtorCodes,
-        List<string>? emailAddresses,
-        string subject,
-        string bodyTemplate)
+    public async Task<IActionResult> Send(string sessionId, List<string>? debtorCodes, List<string>? emailAddresses, string subject, string bodyTemplate)
     {
         try
         {
@@ -252,27 +182,22 @@ public class BulkEmailController : Controller
             subject ??= string.Empty;
             bodyTemplate ??= string.Empty;
 
-            // Load session
             var session = await _bulkEmailService.GetSessionAsync(sessionId);
-
             if (session == null)
             {
                 TempData["ErrorMessage"] = "Session not found";
-                return RedirectToAction("Index", "Pdf");
+                return RedirectToAction("InitiateManual");
             }
 
-            // Update email addresses
             var emailMappings = new Dictionary<string, string>();
             for (int i = 0; i < debtorCodes.Count && i < emailAddresses.Count; i++)
             {
                 if (!string.IsNullOrWhiteSpace(debtorCodes[i]) && !string.IsNullOrWhiteSpace(emailAddresses[i]))
                     emailMappings[debtorCodes[i]] = emailAddresses[i];
             }
-
             if (emailMappings.Count > 0)
                 await _bulkEmailService.UpdateEmailAddressesAsync(sessionId, emailMappings);
 
-            // Prepare email options
             var options = new EmailOptions
             {
                 FromAddress = _configuration["Email:FromAddress"] ?? "noreply@example.com",
@@ -289,76 +214,114 @@ public class BulkEmailController : Controller
                 }
             };
 
-            // Send emails
             var result = await _bulkEmailService.SendBulkEmailsAsync(sessionId, subject, bodyTemplate, options);
-
-            _logger.LogInformation("Bulk email send completed. Success: {SuccessCount}, Failed: {FailedCount}",
-                result.SuccessCount, result.FailedCount);
-
+            _logger.LogInformation("Bulk email send completed. Success: {SuccessCount}, Failed: {FailedCount}", result.SuccessCount, result.FailedCount);
             return View("Result", result);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error sending bulk emails");
             TempData["ErrorMessage"] = $"Error sending emails: {ex.Message}";
-
-            // Reload session for display
-            TempData["BulkSessionId"] = sessionId;
             return RedirectToAction("Preview", new { sid = sessionId });
         }
     }
 
     [HttpGet]
-    public IActionResult UploadZips()
-    {
-        return View();
-    }
+    public IActionResult UploadZips() => View();
 
     [HttpPost]
-    [ValidateAntiForgeryToken]
-    public async Task<IActionResult> UploadZips(IFormFile? soaZip, IFormFile? invoiceZip, IFormFile? odZip)
+    [DisableRequestSizeLimit]
+    // Temporarily without antiforgery while diagnosing upload binding
+    public async Task<IActionResult> UploadZips(IFormFile? soaZip, IFormFile? invoiceZip, IFormFile? odZip, string? customCode)
     {
-        // Create a new per-upload folder
-        string uploadFolder = _uploadFolderService.CreateUploadFolder();
+        // Fallback to raw form file collection if individual parameters did not bind
+        var formFiles = Request?.Form?.Files;
+        if ((soaZip == null || soaZip.Length == 0) && formFiles?.Any(f => f.Name == "soaZip") == true)
+        {
+            soaZip = formFiles!.First(f => f.Name == "soaZip");
+        }
+        if ((invoiceZip == null || invoiceZip.Length == 0) && formFiles?.Any(f => f.Name == "invoiceZip") == true)
+        {
+            invoiceZip = formFiles!.First(f => f.Name == "invoiceZip");
+        }
+        if ((odZip == null || odZip.Length == 0) && formFiles?.Any(f => f.Name == "odZip") == true)
+        {
+            odZip = formFiles!.First(f => f.Name == "odZip");
+        }
+
+        _logger.LogInformation("UploadZips POST: FilesCount={Count} soaZip={SoaLen} invoiceZip={InvLen} odZip={OdLen}",
+            formFiles?.Count, soaZip?.Length, invoiceZip?.Length, odZip?.Length);
+
+        // Basic presence validation
+        if ((soaZip == null || soaZip.Length == 0) && (invoiceZip == null || invoiceZip.Length == 0) && (odZip == null || odZip.Length == 0))
+        {
+            TempData["ErrorMessage"] = "Please upload at least one ZIP file.";
+            return RedirectToAction("UploadZips");
+        }
+
+        // Validate custom code (optional 4–8 digits)
+        if (!string.IsNullOrEmpty(customCode) && !Regex.IsMatch(customCode, "^\\d{4,8}$"))
+        {
+            TempData["ErrorMessage"] = "Custom code must be 4–8 digits.";
+            return RedirectToAction("UploadZips");
+        }
+
+        var stamp = DateTime.UtcNow.ToString("yyyyMMdd_HHmmss");
+        var shortGuid = Guid.NewGuid().ToString("N")[..8];
+        var folderName = string.IsNullOrEmpty(customCode)
+            ? $"{stamp}_{shortGuid}"
+            : $"{stamp}_{customCode}_{shortGuid}";
+
+        var tempRoot = Path.Combine(_env.WebRootPath ?? Directory.GetCurrentDirectory(), "Temp");
+        Directory.CreateDirectory(tempRoot);
+        var uploadFolderPath = Path.Combine(tempRoot, folderName);
+        Directory.CreateDirectory(uploadFolderPath);
+
         int totalExtracted = 0;
 
         try
         {
-            if (soaZip != null && soaZip.Length > 0)
+            if (soaZip is { Length: > 0 })
             {
-                _logger.LogInformation("Processing SOA zip: {FileName}", soaZip.FileName);
-                totalExtracted += await ExtractPdfEntriesFromZipAsync(soaZip, uploadFolder);
+                _logger.LogInformation("Extracting SOA zip: {FileName}", soaZip.FileName);
+                totalExtracted += await ExtractPdfEntriesFromZipAsync(soaZip, uploadFolderPath);
             }
-
-            if (invoiceZip != null && invoiceZip.Length > 0)
+            if (invoiceZip is { Length: > 0 })
             {
-                _logger.LogInformation("Processing Invoice zip: {FileName}", invoiceZip.FileName);
-                totalExtracted += await ExtractPdfEntriesFromZipAsync(invoiceZip, uploadFolder);
+                _logger.LogInformation("Extracting Invoice zip: {FileName}", invoiceZip.FileName);
+                totalExtracted += await ExtractPdfEntriesFromZipAsync(invoiceZip, uploadFolderPath);
             }
-
-            if (odZip != null && odZip.Length > 0)
+            if (odZip is { Length: > 0 })
             {
-                _logger.LogInformation("Processing OD zip: {FileName}", odZip.FileName);
-                totalExtracted += await ExtractPdfEntriesFromZipAsync(odZip, uploadFolder);
+                _logger.LogInformation("Extracting OD zip: {FileName}", odZip.FileName);
+                totalExtracted += await ExtractPdfEntriesFromZipAsync(odZip, uploadFolderPath);
             }
 
             if (totalExtracted == 0)
             {
-                // no PDFs found, cleanup
-                try { if (Directory.Exists(uploadFolder)) Directory.Delete(uploadFolder, true); } catch (Exception ex) { _logger.LogWarning(ex, "Failed to remove empty upload folder {UploadFolder}", uploadFolder); }
-                TempData["ErrorMessage"] = "No PDF files were found in the uploaded ZIP(s).";
-                return RedirectToAction("InitiateManual");
+                try { if (Directory.Exists(uploadFolderPath)) Directory.Delete(uploadFolderPath, true); } catch (Exception ex) { _logger.LogWarning(ex, "Failed to remove empty upload folder {Folder}", uploadFolderPath); }
+                TempData["ErrorMessage"] = "No PDF files found inside uploaded ZIP(s).";
+                return RedirectToAction("UploadZips");
             }
 
-            TempData["SuccessMessage"] = $"Created session with {totalExtracted} PDF(s).";
+            try
+            {
+                System.IO.File.WriteAllText(Path.Combine(uploadFolderPath, ".origin.zip"), DateTime.UtcNow.ToString("O"));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Unable to write origin marker for zip folder {Folder}", uploadFolderPath);
+            }
+
+            TempData["SuccessMessage"] = $"Created session '{folderName}' with {totalExtracted} PDF(s).";
             return RedirectToAction("InitiateManual");
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error extracting uploaded ZIPs");
-            try { if (Directory.Exists(uploadFolder)) Directory.Delete(uploadFolder, true); } catch { }
-            TempData["ErrorMessage"] = "Error processing uploaded ZIP files: " + ex.Message;
-            return RedirectToAction("InitiateManual");
+            _logger.LogError(ex, "Error extracting ZIP uploads to folder {Folder}", uploadFolderPath);
+            try { if (Directory.Exists(uploadFolderPath)) Directory.Delete(uploadFolderPath, true); } catch { }
+            TempData["ErrorMessage"] = "Error processing ZIP(s): " + ex.Message;
+            return RedirectToAction("UploadZips");
         }
     }
 
@@ -369,22 +332,19 @@ public class BulkEmailController : Controller
         using var archive = new ZipArchive(zipStream, ZipArchiveMode.Read, leaveOpen: false);
         foreach (var entry in archive.Entries)
         {
-            // Skip directories and non-pdf files
-            if (string.IsNullOrEmpty(entry.Name)) continue;
+            if (string.IsNullOrEmpty(entry.Name)) continue; // directory
             var ext = Path.GetExtension(entry.Name);
-            if (!string.Equals(ext, ".pdf", StringComparison.OrdinalIgnoreCase)) continue;
+            if (!ext.Equals(".pdf", StringComparison.OrdinalIgnoreCase)) continue;
 
             var fileName = Path.GetFileName(entry.Name);
             if (string.IsNullOrEmpty(fileName)) continue;
 
             var destPath = Path.Combine(destinationFolder, fileName);
-            // avoid overwrite by adding a numeric suffix
-            int suffix = 1;
             var baseName = Path.GetFileNameWithoutExtension(fileName);
+            int suffix = 1;
             while (System.IO.File.Exists(destPath))
             {
-                var newName = $"{baseName}_{suffix}{ext}";
-                destPath = Path.Combine(destinationFolder, newName);
+                destPath = Path.Combine(destinationFolder, $"{baseName}_{suffix}.pdf");
                 suffix++;
             }
 
@@ -394,7 +354,6 @@ public class BulkEmailController : Controller
             await entryStream.CopyToAsync(outStream);
             extracted++;
         }
-
         return extracted;
     }
 }

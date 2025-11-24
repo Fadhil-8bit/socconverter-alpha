@@ -1,7 +1,15 @@
 using socconvertor.Services;
+using Microsoft.AspNetCore.Http.Features;
 
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Increase multipart limits for large ZIP uploads (e.g., up to 500MB total)
+builder.Services.Configure<FormOptions>(o =>
+{
+    o.MultipartBodyLengthLimit = 500 * 1024 * 1024; // 500 MB
+    o.MultipartHeadersLengthLimit = 128 * 1024;
+});
 
 // Add services to the container.
 builder.Services.AddControllersWithViews();

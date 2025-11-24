@@ -14,8 +14,28 @@
     <h2>Upload split ZIP files</h2>
     <p class="text-muted">Upload one or more ZIP files containing already-split PDFs. Supported types: <strong>soa.zip</strong>, <strong>invoice.zip</strong>, <strong>od.zip</strong>.</p>
 
+    @if (TempData["ErrorMessage"] != null)
+    {
+        <div class="alert alert-danger alert-dismissible fade show" role="alert">
+            <strong>Error:</strong> @TempData["ErrorMessage"]
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    }
+    @if (TempData["SuccessMessage"] != null)
+    {
+        <div class="alert alert-success alert-dismissible fade show" role="alert">
+            <strong>Success:</strong> @TempData["SuccessMessage"]
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    }
+
     <form asp-action="UploadZips" asp-controller="BulkEmail" method="post" enctype="multipart/form-data">
         @Html.AntiForgeryToken()
+        <div class="mb-3">
+            <label class="form-label">Custom Code (optional, 4–8 digits)</label>
+            <input type="text" name="customCode" pattern="\d{4,8}" class="form-control" placeholder="e.g. 202412" />
+            <div class="form-text">Will be embedded in the session folder name to distinguish uploads.</div>
+        </div>
         <div class="mb-3">
             <label class="form-label">SOA ZIP (optional)</label>
             <input type="file" name="soaZip" accept=".zip" class="form-control" />
@@ -40,7 +60,7 @@
         <ul>
             <li>Each ZIP should contain only PDF files. Non-PDF entries will be ignored.</li>
             <li>If multiple ZIPs are uploaded they will be merged into one session folder.</li>
-            <li>The created session will appear in the Select Sessions list with a new session id.</li>
+            <li>The session folder name format: <code>yyyyMMdd_HHmmss_CUSTOMCODE_guid</code> (custom code omitted if not provided).</li>
         </ul>
     </div>
 </div>

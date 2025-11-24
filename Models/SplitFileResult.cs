@@ -4,7 +4,8 @@ public enum DocumentType
 {
     SOA,
     Invoice,
-    Overdue
+    Overdue,
+    Unknown
 }
 
 public class SplitFileResult

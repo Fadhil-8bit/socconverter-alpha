@@ -1,48 +1,52 @@
 # SOCConvertor
 
-A simple ASP.NET Core MVC tool for splitting PDF files by SOA, Invoice, or Debtor Code. Designed for internal admin use.
+Internal tool with two distinct workflows:
+
+## Workflow A: Split PDFs
+1. Navigate to "Split PDFs".
+2. Upload a single master PDF.
+3. Choose split type (SOA / Invoice / Overdue).
+4. (Optional) Preview pages.
+5. Split executes; result list displays generated PDFs.
+6. Download individual files or the combined ZIP.
+
+## Workflow B: Bulk Email
+1. Navigate to "Bulk Upload ZIPs".
+2. Upload one or more ZIPs (soa.zip / invoice.zip / od.zip) + optional custom code.
+3. System creates a single session folder with extracted PDFs (origin=ZIP).
+4. Navigate to "Bulk Email Sessions" to select one or more session folders.
+5. Click Scan/Group to build an email session.
+6. Preview debtor groups and adjust email addresses.
+7. Send bulk emails; view result summary.
 
 ## Features
-- Upload a PDF and split by:
-  - Statement of Account (SOA)
-  - Invoice
-  - Debtor Code
-- Preview PDF pages before splitting
-- Download all split files as a ZIP
-- No authentication required (internal use)
+- PDF splitting by SOA / Invoice / Overdue with per-upload isolated folders.
+- ZIP ingestion for pre-split PDFs; origin tagging.
+- Unknown type handling (files without tokens remain unchanged and marked UNKNOWN).
+- Distinct navigation for Splitting vs Bulk Email.
 
 ## Getting Started
 
 ### Prerequisites
 - .NET 9.0 SDK
 - Git
-- (Optional) Docker
 
-### Running Locally
+### Run
 ```powershell
-cd "C:\Users\it support\Downloads\socconvertor\socconvertor\socconvertor"
 dotnet run
 ```
-Open your browser to the address shown in the console (usually `https://localhost:5001` or similar).
+Browse to the URL shown in console.
 
-### Docker Build & Run
+### Docker
 ```powershell
 docker build -t socconvertor .
 docker run -p 5001:5001 -v ${PWD}/wwwroot/Temp:/app/wwwroot/Temp socconvertor
 ```
 
-### Usage
-1. Go to the web interface
-2. Upload your PDF
-3. Select split type (SOA, Invoice, Debtor Code)
-4. Preview pages if needed
-5. Click 'Split' to process
-6. Download split files as ZIP
-
 ## Notes
-- All split files are saved in `wwwroot/Temp`.
-- Temp files are overwritten on each upload.
-- For multiple users, run separate containers or add per-upload folders.
+- Session folders live under `wwwroot/Temp`.
+- Origin markers: `.origin.split` or `.origin.zip`.
+- TempData only used for user messages; workflow state passed via route/query.
 
 ## License
-Internal use only. Not for public distribution.
+Internal use only.
