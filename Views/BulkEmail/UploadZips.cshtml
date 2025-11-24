@@ -1,0 +1,46 @@
+@{
+    ViewData["Title"] = "Upload Split ZIPs";
+    var crumbs = new List<socconvertor.Models.BreadcrumbItem>
+    {
+        new socconvertor.Models.BreadcrumbItem { Text = "Dashboard", Controller = "Home", Action = "Index" },
+        new socconvertor.Models.BreadcrumbItem { Text = "Select Sessions", Controller = "BulkEmail", Action = "InitiateManual" },
+        new socconvertor.Models.BreadcrumbItem { Text = "Upload ZIPs", Active = true }
+    };
+}
+
+@await Html.PartialAsync("_Breadcrumb", crumbs)
+
+<div class="container mt-3">
+    <h2>Upload split ZIP files</h2>
+    <p class="text-muted">Upload one or more ZIP files containing already-split PDFs. Supported types: <strong>soa.zip</strong>, <strong>invoice.zip</strong>, <strong>od.zip</strong>.</p>
+
+    <form asp-action="UploadZips" asp-controller="BulkEmail" method="post" enctype="multipart/form-data">
+        @Html.AntiForgeryToken()
+        <div class="mb-3">
+            <label class="form-label">SOA ZIP (optional)</label>
+            <input type="file" name="soaZip" accept=".zip" class="form-control" />
+        </div>
+        <div class="mb-3">
+            <label class="form-label">Invoice ZIP (optional)</label>
+            <input type="file" name="invoiceZip" accept=".zip" class="form-control" />
+        </div>
+        <div class="mb-3">
+            <label class="form-label">OD ZIP (optional)</label>
+            <input type="file" name="odZip" accept=".zip" class="form-control" />
+        </div>
+
+        <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-primary">Upload and Create Session</button>
+            <a class="btn btn-secondary" href="@Url.Action("InitiateManual", "BulkEmail")">Back</a>
+        </div>
+    </form>
+
+    <div class="mt-4 text-muted small">
+        <p>Notes:</p>
+        <ul>
+            <li>Each ZIP should contain only PDF files. Non-PDF entries will be ignored.</li>
+            <li>If multiple ZIPs are uploaded they will be merged into one session folder.</li>
+            <li>The created session will appear in the Select Sessions list with a new session id.</li>
+        </ul>
+    </div>
+</div>

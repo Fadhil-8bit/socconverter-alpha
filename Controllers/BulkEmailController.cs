@@ -5,6 +5,7 @@ using socconvertor.Models.Email;
 using Microsoft.AspNetCore.Hosting;
 using System.Linq;
 using System;
+using System.IO.Compression;
 
 namespace socconvertor.Controllers;
 
@@ -14,17 +15,20 @@ public class BulkEmailController : Controller
     private readonly IConfiguration _configuration;
     private readonly ILogger<BulkEmailController> _logger;
     private readonly IWebHostEnvironment _env;
+    private readonly UploadFolderService _uploadFolderService;
 
     public BulkEmailController(
         IBulkEmailService bulkEmailService,
         IConfiguration configuration,
         ILogger<BulkEmailController> logger,
-        IWebHostEnvironment env)
+        IWebHostEnvironment env,
+        UploadFolderService uploadFolderService)
     {
         _bulkEmailService = bulkEmailService;
         _configuration = configuration;
         _logger = logger;
         _env = env;
+        _uploadFolderService = uploadFolderService;
     }
 
     private static string GetDocTypeFromName(string fileName)
@@ -302,5 +306,95 @@ public class BulkEmailController : Controller
             TempData["BulkSessionId"] = sessionId;
             return RedirectToAction("Preview", new { sid = sessionId });
         }
+    }
+
+    [HttpGet]
+    public IActionResult UploadZips()
+    {
+        return View();
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> UploadZips(IFormFile? soaZip, IFormFile? invoiceZip, IFormFile? odZip)
+    {
+        // Create a new per-upload folder
+        string uploadFolder = _uploadFolderService.CreateUploadFolder();
+        int totalExtracted = 0;
+
+        try
+        {
+            if (soaZip != null && soaZip.Length > 0)
+            {
+                _logger.LogInformation("Processing SOA zip: {FileName}", soaZip.FileName);
+                totalExtracted += await ExtractPdfEntriesFromZipAsync(soaZip, uploadFolder);
+            }
+
+            if (invoiceZip != null && invoiceZip.Length > 0)
+            {
+                _logger.LogInformation("Processing Invoice zip: {FileName}", invoiceZip.FileName);
+                totalExtracted += await ExtractPdfEntriesFromZipAsync(invoiceZip, uploadFolder);
+            }
+
+            if (odZip != null && odZip.Length > 0)
+            {
+                _logger.LogInformation("Processing OD zip: {FileName}", odZip.FileName);
+                totalExtracted += await ExtractPdfEntriesFromZipAsync(odZip, uploadFolder);
+            }
+
+            if (totalExtracted == 0)
+            {
+                // no PDFs found, cleanup
+                try { if (Directory.Exists(uploadFolder)) Directory.Delete(uploadFolder, true); } catch (Exception ex) { _logger.LogWarning(ex, "Failed to remove empty upload folder {UploadFolder}", uploadFolder); }
+                TempData["ErrorMessage"] = "No PDF files were found in the uploaded ZIP(s).";
+                return RedirectToAction("InitiateManual");
+            }
+
+            TempData["SuccessMessage"] = $"Created session with {totalExtracted} PDF(s).";
+            return RedirectToAction("InitiateManual");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error extracting uploaded ZIPs");
+            try { if (Directory.Exists(uploadFolder)) Directory.Delete(uploadFolder, true); } catch { }
+            TempData["ErrorMessage"] = "Error processing uploaded ZIP files: " + ex.Message;
+            return RedirectToAction("InitiateManual");
+        }
+    }
+
+    private static async Task<int> ExtractPdfEntriesFromZipAsync(IFormFile zipFile, string destinationFolder)
+    {
+        int extracted = 0;
+        using var zipStream = zipFile.OpenReadStream();
+        using var archive = new ZipArchive(zipStream, ZipArchiveMode.Read, leaveOpen: false);
+        foreach (var entry in archive.Entries)
+        {
+            // Skip directories and non-pdf files
+            if (string.IsNullOrEmpty(entry.Name)) continue;
+            var ext = Path.GetExtension(entry.Name);
+            if (!string.Equals(ext, ".pdf", StringComparison.OrdinalIgnoreCase)) continue;
+
+            var fileName = Path.GetFileName(entry.Name);
+            if (string.IsNullOrEmpty(fileName)) continue;
+
+            var destPath = Path.Combine(destinationFolder, fileName);
+            // avoid overwrite by adding a numeric suffix
+            int suffix = 1;
+            var baseName = Path.GetFileNameWithoutExtension(fileName);
+            while (System.IO.File.Exists(destPath))
+            {
+                var newName = $"{baseName}_{suffix}{ext}";
+                destPath = Path.Combine(destinationFolder, newName);
+                suffix++;
+            }
+
+            Directory.CreateDirectory(destinationFolder);
+            using var entryStream = entry.Open();
+            using var outStream = System.IO.File.Create(destPath);
+            await entryStream.CopyToAsync(outStream);
+            extracted++;
+        }
+
+        return extracted;
     }
 }
