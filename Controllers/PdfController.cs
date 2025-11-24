@@ -122,10 +122,11 @@ public class PdfController : Controller
                 if (soaRecords.Count == 0)
                 {
                     ViewBag.Message = "The uploaded PDF does not contain a valid SOA format.";
+                    await CleanupUploadFolderAsync(uploadFolder);
                     return View("Index");
                 }
 
-                    splitFiles = _pdfService.SplitPdfBySoa(filePath, soaRecords, customCode, uploadFolder);
+                splitFiles = _pdfService.SplitPdfBySoa(filePath, soaRecords, customCode, uploadFolder);
             }
             else if (splitType == "Invoice")
             {
@@ -133,10 +134,11 @@ public class PdfController : Controller
                 if (invoiceRecords.Count == 0)
                 {
                     ViewBag.Message = "The uploaded PDF does not contain a valid Invoice format.";
+                    await CleanupUploadFolderAsync(uploadFolder);
                     return View("Index");
                 }
 
-                    splitFiles = _pdfService.SplitPdfByInvoice(filePath, invoiceRecords, customCode, uploadFolder);
+                splitFiles = _pdfService.SplitPdfByInvoice(filePath, invoiceRecords, customCode, uploadFolder);
             }
             else if (splitType == "DebtorCode")
             {
@@ -144,14 +146,16 @@ public class PdfController : Controller
                 if (odRecords.Count == 0)
                 {
                     ViewBag.Message = "The uploaded PDF does not contain any Debtor Codes.";
+                    await CleanupUploadFolderAsync(uploadFolder);
                     return View("Index");
                 }
 
-                    splitFiles = _pdfService.SplitPdfByOd(filePath, odRecords, customCode, uploadFolder);
+                splitFiles = _pdfService.SplitPdfByOd(filePath, odRecords, customCode, uploadFolder);
             }
             else
             {
                 ViewBag.Message = "Invalid split type selected.";
+                await CleanupUploadFolderAsync(uploadFolder);
                 return View("Index");
             }
 
@@ -160,6 +164,17 @@ public class PdfController : Controller
             ViewBag.FolderId = folderId;
             TempData["CurrentSplitFiles"] = string.Join(";", splitFiles.Select(f => f.FileName));
 
+            // If split produced no files (edge case), cleanup and inform user
+            if (splitFiles == null || splitFiles.Count == 0)
+            {
+                ViewBag.Message = "No split files were produced from the uploaded PDF.";
+                await CleanupUploadFolderAsync(uploadFolder);
+                return View("Index");
+            }
+
+            // Optionally delete original master file after successful split
+            _ = Task.Run(async () => await DeleteOriginalWithRetriesAsync(filePath, originalSubfolder));
+
             return View("SplitResult", splitFiles);
         }
         catch (Exception ex)
@@ -167,7 +182,79 @@ public class PdfController : Controller
             _logger.LogError(ex, "Error processing PDF upload. SplitType: {SplitType}, FileName: {FileName}", 
                 splitType, pdfFile.FileName);
             ViewBag.Message = "Error processing PDF: " + ex.Message;
+            await CleanupUploadFolderAsync(uploadFolder);
             return View("Index");
+        }
+    }
+
+    private async Task CleanupUploadFolderAsync(string uploadFolder)
+    {
+        try
+        {
+            // Try to delete folder immediately with a few retries
+            var attempts = 3;
+            for (int i = 0; i < attempts; i++)
+            {
+                try
+                {
+                    if (Directory.Exists(uploadFolder))
+                        Directory.Delete(uploadFolder, true);
+                    break;
+                }
+                catch (IOException)
+                {
+                    await Task.Delay(250);
+                }
+                catch (UnauthorizedAccessException)
+                {
+                    await Task.Delay(250);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to cleanup upload folder {UploadFolder}", uploadFolder);
+        }
+        finally
+        {
+            TempData.Remove("UploadFolder");
+            TempData.Remove("CurrentSplitFiles");
+        }
+    }
+
+    private async Task DeleteOriginalWithRetriesAsync(string filePath, string originalSubfolder)
+    {
+        try
+        {
+            var deleted = false;
+            for (int attempt = 0; attempt < 3 && !deleted; attempt++)
+            {
+                try
+                {
+                    if (System.IO.File.Exists(filePath))
+                        System.IO.File.Delete(filePath);
+
+                    if (Directory.Exists(originalSubfolder) && !Directory.EnumerateFileSystemEntries(originalSubfolder).Any())
+                        Directory.Delete(originalSubfolder);
+
+                    deleted = true;
+                }
+                catch (IOException)
+                {
+                    await Task.Delay(300);
+                }
+                catch (UnauthorizedAccessException)
+                {
+                    await Task.Delay(300);
+                }
+            }
+
+            if (!deleted)
+                _logger.LogWarning("Failed to remove original uploaded PDF after retries: {FilePath}", filePath);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Error deleting original uploaded PDF: {FilePath}", filePath);
         }
     }
 
