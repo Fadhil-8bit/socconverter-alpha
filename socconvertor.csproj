@@ -21,7 +21,6 @@
 
 	<ItemGroup>
 	  <Folder Include="Services\BulkEmail\" />
-	  <Folder Include="wwwroot\Temp\" />
 	</ItemGroup>
 
 
