@@ -6,14 +6,12 @@ using System.Text.RegularExpressions;
 
 namespace socconvertor.Services;
 
-/// <summary>
-/// Implementation of bulk email service for grouping and sending PDFs by debtor
-/// </summary>
 public class BulkEmailService : IBulkEmailService
 {
     private readonly IEmailSender _emailSender;
-    private readonly IWebHostEnvironment _environment;
+    private readonly IWebHostEnvironment _environment; // retained for potential future use
     private readonly IContactProvider _contacts;
+    private readonly IStoragePaths _paths;
     private readonly ConcurrentDictionary<string, BulkEmailSession> _sessions;
 
     // Regex pattern to extract debtor code from filename
@@ -24,11 +22,12 @@ public class BulkEmailService : IBulkEmailService
         TimeSpan.FromMilliseconds(500)
     );
 
-    public BulkEmailService(IEmailSender emailSender, IWebHostEnvironment environment, IContactProvider contacts)
+    public BulkEmailService(IEmailSender emailSender, IWebHostEnvironment environment, IContactProvider contacts, IStoragePaths paths)
     {
         _emailSender = emailSender;
         _environment = environment;
         _contacts = contacts;
+        _paths = paths;
         _sessions = new ConcurrentDictionary<string, BulkEmailSession>();
     }
 
@@ -45,32 +44,23 @@ public class BulkEmailService : IBulkEmailService
         // Scan each session folder
         foreach (var sessionId in sessionIds)
         {
-            var sessionPath = Path.Combine(_environment.WebRootPath, "Temp", sessionId);
-
+            // Use configured bulk email root instead of hardcoded wwwroot/Temp
+            var sessionPath = Path.Combine(_paths.BulkEmailRoot, sessionId);
             if (!Directory.Exists(sessionPath))
-            {
-                continue; // Skip non-existent sessions
-            }
+                continue;
 
             // Get all PDF files, excluding the "original" subfolder
             var pdfFiles = Directory.GetFiles(sessionPath, "*.pdf", SearchOption.TopDirectoryOnly);
-
             foreach (var filePath in pdfFiles)
             {
                 var fileName = Path.GetFileName(filePath);
 
                 // Skip files in "original" subfolder if they somehow got included
                 if (filePath.Contains(Path.Combine(sessionPath, "original"), StringComparison.OrdinalIgnoreCase))
-                {
                     continue;
-                }
 
                 // Extract debtor code
-                var debtorCode = ExtractDebtorCodeFromFileName(fileName);
-                if (string.IsNullOrEmpty(debtorCode))
-                {
-                    debtorCode = "UNCLASSIFIED";
-                }
+                var debtorCode = ExtractDebtorCodeFromFileName(fileName) ?? "UNCLASSIFIED";
 
                 // Determine document type from filename
                 var docType = DetermineDocumentType(fileName);
@@ -90,10 +80,7 @@ public class BulkEmailService : IBulkEmailService
 
                 // Group by debtor code
                 if (!attachmentsByDebtor.ContainsKey(debtorCode))
-                {
                     attachmentsByDebtor[debtorCode] = new List<AttachmentFile>();
-                }
-
                 attachmentsByDebtor[debtorCode].Add(attachment);
             }
         }
@@ -205,30 +192,20 @@ public class BulkEmailService : IBulkEmailService
     public Task<bool> UpdateEmailAddressesAsync(string sessionId, Dictionary<string, string> emailMappings)
     {
         if (!_sessions.TryGetValue(sessionId, out var session))
-        {
             return Task.FromResult(false);
-        }
 
         foreach (var group in session.DebtorGroups)
         {
-            if (emailMappings.ContainsKey(group.DebtorCode))
-            {
-                group.EmailAddress = emailMappings[group.DebtorCode];
-            }
+            if (emailMappings.TryGetValue(group.DebtorCode, out var addr))
+                group.EmailAddress = addr;
         }
-
         return Task.FromResult(true);
     }
 
     public string? ExtractDebtorCodeFromFileName(string fileName)
     {
         var match = DebtorCodePattern.Match(fileName);
-        if (match.Success)
-        {
-            return match.Groups[1].Value.Replace(" ", "").Trim();
-        }
-
-        return null;
+        return match.Success ? match.Groups[1].Value.Replace(" ", "").Trim() : null;
     }
 
     private static DocumentType DetermineDocumentType(string fileName)
@@ -249,19 +226,15 @@ public class BulkEmailService : IBulkEmailService
 
     private static string ReplacePlaceholders(string template, DebtorEmailGroup group, Dictionary<string, string> customPlaceholders)
     {
-        var result = template;
-
-        // Standard placeholders
-        result = result.Replace("{DebtorCode}", group.DebtorCode);
-        result = result.Replace("{DebtorName}", group.DebtorName ?? group.DebtorCode);
-        result = result.Replace("{FileCount}", group.TotalFileCount.ToString());
-        result = result.Replace("{TotalSize}", group.TotalSizeFormatted);
+        var result = template
+            .Replace("{DebtorCode}", group.DebtorCode)
+            .Replace("{DebtorName}", group.DebtorName ?? group.DebtorCode)
+            .Replace("{FileCount}", group.TotalFileCount.ToString())
+            .Replace("{TotalSize}", group.TotalSizeFormatted);
 
         // Custom placeholders
         foreach (var kvp in customPlaceholders)
-        {
             result = result.Replace($"{{{kvp.Key}}}", kvp.Value);
-        }
 
         return result;
     }

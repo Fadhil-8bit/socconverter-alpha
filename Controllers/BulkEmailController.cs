@@ -92,18 +92,52 @@ public class BulkEmailController : Controller
         if (model?.SelectedSessionIds == null || model.SelectedSessionIds.Count == 0)
         {
             ModelState.AddModelError(string.Empty, "Please select at least one session.");
-            var infos = GetSessionInfos();
+            var infosInitial = GetSessionInfos();
             model ??= new SelectSessionsViewModel();
-            model.AvailableSessionIds = infos.Select(i => i.Id).ToList();
-            model.Sessions = infos;
+            model.AvailableSessionIds = infosInitial.Select(i => i.Id).ToList();
+            model.Sessions = infosInitial;
             return View(model);
         }
+
+        // Validate that selected sessions actually contain PDFs
+        var root = _paths.BulkEmailRoot;
+        var existingSessions = GetSessionInfos(); // current snapshot for view refresh
+        var emptySessions = new List<string>();
+        var validSessions = new List<string>();
+        foreach (var sid in model.SelectedSessionIds.Distinct())
+        {
+            var sessionPath = Path.Combine(root, sid);
+            if (!Directory.Exists(sessionPath))
+            {
+                emptySessions.Add(sid + " (missing)");
+                continue;
+            }
+            var pdfs = Directory.GetFiles(sessionPath, "*.pdf", SearchOption.TopDirectoryOnly);
+            if (pdfs.Length == 0)
+                emptySessions.Add(sid);
+            else
+                validSessions.Add(sid);
+        }
+        if (emptySessions.Count > 0)
+        {
+            ModelState.AddModelError(string.Empty, $"The following selected sessions have no PDF files: {string.Join(", ", emptySessions)}");
+        }
+        if (validSessions.Count == 0)
+        {
+            ModelState.AddModelError(string.Empty, "Selected sessions contain no PDF files. Upload ZIPs first.");
+            model.AvailableSessionIds = existingSessions.Select(i => i.Id).ToList();
+            model.Sessions = existingSessions;
+            return View(model);
+        }
+        // Use only valid sessions for grouping
+        model.SelectedSessionIds = validSessions;
+
         try
         {
             var bulkSession = await _bulkEmailService.PrepareBulkEmailAsync(model.SelectedSessionIds);
             if (bulkSession.TotalDebtors == 0)
             {
-                ModelState.AddModelError(string.Empty, "No PDF files found in the selected sessions.");
+                ModelState.AddModelError(string.Empty, "No debtor groups were produced from the selected sessions.");
                 var infos = GetSessionInfos();
                 model.AvailableSessionIds = infos.Select(i => i.Id).ToList();
                 model.Sessions = infos;

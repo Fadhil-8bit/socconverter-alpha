@@ -12,9 +12,24 @@
 
 <div class="container mt-2">
     <h2>Select Session Folders</h2>
-    <p class="text-muted">Pick one or more session folders from wwwroot/Temp to merge and send by email.</p>
+    <p class="text-muted">Select one or more bulk (ZIP) session folders to group and send by email.</p>
     <p class="text-muted">Found <strong>@(Model.Sessions?.Count ?? 0)</strong> session(s).</p>
-    <p class="small text-muted">Files without SOA / INV / OD tokens are counted as <span class="badge bg-secondary">UNKNOWN</span>. Origin badges: <span class="badge bg-primary">SPLIT</span> (created via PDF split) / <span class="badge bg-dark">ZIP</span> (uploaded ZIP).</p>
+    <p class="small text-muted">Files without SOA / INV / OD tokens are counted as <span class="badge bg-secondary">UNKNOWN</span>.</p>
+
+    @if (TempData["ErrorMessage"] != null)
+    {
+        <div class="alert alert-danger alert-dismissible fade show" role="alert">
+            <strong>Error:</strong> @TempData["ErrorMessage"]
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    }
+    @if (TempData["SuccessMessage"] != null)
+    {
+        <div class="alert alert-success alert-dismissible fade show" role="alert">
+            <strong>Success:</strong> @TempData["SuccessMessage"]
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    }
 
     @if (!ViewData.ModelState.IsValid)
     {
@@ -40,8 +55,6 @@
 
         <div class="mb-2 d-flex gap-2">
             <button type="button" class="btn btn-sm btn-outline-secondary origin-filter" data-origin="all">All</button>
-            <button type="button" class="btn btn-sm btn-outline-primary origin-filter" data-origin="split">Split</button>
-            <button type="button" class="btn btn-sm btn-outline-dark origin-filter" data-origin="zip">Zip</button>
         </div>
 
         <div class="card mb-3">
@@ -49,7 +62,7 @@
             <div class="card-body">
                 @if ((Model.Sessions?.Count ?? 0) == 0)
                 {
-                    <div class="text-muted">No sessions found in wwwroot/Temp.</div>
+                    <div class="text-muted">No sessions found. Upload ZIPs to create sessions.</div>
                 }
                 else
                 {
@@ -69,7 +82,6 @@
                                         <span class="badge bg-light text-dark border me-1">@s.PdfCount PDF</span>
                                         <span class="badge bg-light text-dark border me-1">@s.TotalSizeFormatted</span>
                                         <span class="badge bg-light text-dark border me-1">@s.LastModifiedUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</span>
-                                        <span class="badge @(s.Origin == "split" ? "bg-primary" : s.Origin == "zip" ? "bg-dark" : "bg-secondary")">@s.Origin.ToUpperInvariant()</span>
                                     </div>
                                     <div class="small">
                                         <span class="badge bg-info text-dark me-1">SOA: @s.SoaCount</span>
@@ -78,20 +90,15 @@
                                         <span class="badge bg-secondary text-light">UNK: @s.UnknownCount</span>
                                     </div>
                                     <div class="d-flex flex-wrap gap-2">
-                                        <a class="btn btn-sm btn-outline-primary" href="@Url.Action("ViewSession", "Pdf", new { folderId = s.Id })">
-                                            <i class="bi bi-eye"></i> View
-                                        </a>
-                                        <a class="btn btn-sm btn-outline-success" href="@Url.Action("DownloadAll", "Pdf", new { folderId = s.Id })">
-                                            <i class="bi bi-download"></i> Zip
-                                        </a>
-                                        <form class="d-inline" method="post" asp-action="DeleteSession" asp-controller="BulkEmail" onsubmit="return confirm('Delete session @s.Id ?');">
-                                            @Html.AntiForgeryToken()
-                                            <input type="hidden" name="folderId" value="@s.Id" />
-                                            <input type="hidden" name="returnUrl" value="@Url.Action("InitiateManual", "BulkEmail")" />
-                                            <button type="submit" class="btn btn-sm btn-outline-danger">
-                                                <i class="bi bi-trash"></i> Delete
-                                            </button>
-                                        </form>
+                                        <button type="submit"
+                                                class="btn btn-sm btn-outline-danger"
+                                                name="folderId"
+                                                value="@s.Id"
+                                                formaction="@Url.Action("DeleteSession", "BulkEmail")"
+                                                formmethod="post"
+                                                onclick="return confirm('Delete session @s.Id ?');">
+                                            <i class="bi bi-trash"></i> Delete
+                                        </button>
                                     </div>
                                 </div>
                             </div>
@@ -135,22 +142,6 @@
                     });
                 });
             }
-
-            const originButtons = Array.from(document.querySelectorAll('.origin-filter'));
-            originButtons.forEach(btn => {
-                btn.addEventListener('click', () => {
-                    const origin = btn.getAttribute('data-origin');
-                    originButtons.forEach(b => b.classList.remove('active'));
-                    btn.classList.add('active');
-                    items().forEach(it => {
-                        if (origin === 'all') { it.classList.remove('d-none-origin'); return; }
-                        const badge = it.querySelector('.badge.bg-primary, .badge.bg-dark, .badge.bg-secondary');
-                        const otext = badge ? badge.textContent.trim().toLowerCase() : 'unknown';
-                        const hide = otext !== origin;
-                        it.classList.toggle('d-none-origin', hide);
-                    });
-                });
-            });
         })();
     </script>
 }
