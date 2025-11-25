@@ -1,5 +1,5 @@
 @{
-    ViewData["Title"] = "Upload Split ZIPs";
+    ViewData["Title"] = "Upload ZIPs";
     var crumbs = new List<socconvertor.Models.BreadcrumbItem>
     {
         new socconvertor.Models.BreadcrumbItem { Text = "Dashboard", Controller = "Home", Action = "Index" },
@@ -10,57 +10,153 @@
 
 @await Html.PartialAsync("_Breadcrumb", crumbs)
 
-<div class="container mt-3">
-    <h2>Upload split ZIP files</h2>
-    <p class="text-muted">Upload one or more ZIP files containing already-split PDFs. Supported types: <strong>soa.zip</strong>, <strong>invoice.zip</strong>, <strong>od.zip</strong>.</p>
+<div class="container mt-3" id="uploadApp">
+    <h2>Create Session from ZIPs</h2>
+    <p class="text-muted">Drag & drop one or more ZIP files (SOA / INV / OD) or use the picker. Non-PDF entries skipped.</p>
 
-    @if (TempData["ErrorMessage"] != null)
-    {
-        <div class="alert alert-danger alert-dismissible fade show" role="alert">
-            <strong>Error:</strong> @TempData["ErrorMessage"]
-            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-        </div>
-    }
-    @if (TempData["SuccessMessage"] != null)
-    {
-        <div class="alert alert-success alert-dismissible fade show" role="alert">
-            <strong>Success:</strong> @TempData["SuccessMessage"]
-            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-        </div>
-    }
+    <div id="alerts"></div>
 
-    <form asp-action="UploadZips" asp-controller="BulkEmail" method="post" enctype="multipart/form-data">
+    <form id="zipForm" enctype="multipart/form-data" class="mb-3">
         @Html.AntiForgeryToken()
-        <div class="mb-3">
-            <label class="form-label">Custom Code (optional, 4–8 digits)</label>
-            <input type="text" name="customCode" pattern="\d{4,8}" class="form-control" placeholder="e.g. 202412" />
-            <div class="form-text">Will be embedded in the session folder name to distinguish uploads.</div>
-        </div>
-        <div class="mb-3">
-            <label class="form-label">SOA ZIP (optional)</label>
-            <input type="file" name="soaZip" accept=".zip" class="form-control" />
-        </div>
-        <div class="mb-3">
-            <label class="form-label">Invoice ZIP (optional)</label>
-            <input type="file" name="invoiceZip" accept=".zip" class="form-control" />
-        </div>
-        <div class="mb-3">
-            <label class="form-label">OD ZIP (optional)</label>
-            <input type="file" name="odZip" accept=".zip" class="form-control" />
+        <div class="row g-3">
+            <div class="col-md-4">
+                <label class="form-label">Custom Code (optional 4–8 digits)</label>
+                <input type="text" name="customCode" pattern="\d{4,8}" class="form-control" placeholder="e.g. 202412" />
+            </div>
+            <div class="col-md-8">
+                <div id="dropZone" class="border border-dashed rounded p-4 text-center bg-light">
+                    <p class="m-0"><strong>Drag & Drop ZIP files here</strong></p>
+                    <p class="small text-muted mb-2">or click to select</p>
+                    <input type="file" id="fileInput" name="files" accept=".zip" multiple hidden />
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="chooseBtn">Choose Files</button>
+                </div>
+            </div>
         </div>
 
-        <div class="d-flex gap-2">
-            <button type="submit" class="btn btn-primary">Upload and Create Session</button>
-            <a class="btn btn-secondary" href="@Url.Action("InitiateManual", "BulkEmail")">Back</a>
+        <div class="mt-3" id="fileList" class="small"></div>
+
+        <div class="mt-3 d-flex align-items-center gap-3">
+            <button type="submit" class="btn btn-primary" id="uploadBtn" disabled>Upload & Create Session</button>
+            <button type="button" class="btn btn-secondary" id="resetBtn">Reset</button>
+            <a class="btn btn-outline-primary ms-auto" href="@Url.Action("InitiateManual", "BulkEmail")">Back to Sessions</a>
         </div>
     </form>
 
-    <div class="mt-4 text-muted small">
-        <p>Notes:</p>
+    <div class="progress mb-3 d-none" id="progressWrap" style="height:20px;">
+        <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width:0%" id="uploadProgress">0%</div>
+    </div>
+
+    <div id="summary" class="d-none card shadow-sm">
+        <div class="card-header">Session Created</div>
+        <div class="card-body">
+            <p id="summaryText" class="mb-2"></p>
+            <div id="counts" class="mb-3"></div>
+            <div class="d-flex gap-2">
+                <a id="gotoSessions" class="btn btn-success" href="@Url.Action("InitiateManual", "BulkEmail")">Go to Sessions</a>
+                <button class="btn btn-outline-secondary" id="uploadMore">Upload More</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="small text-muted mt-4">
         <ul>
-            <li>Each ZIP should contain only PDF files. Non-PDF entries will be ignored.</li>
-            <li>If multiple ZIPs are uploaded they will be merged into one session folder.</li>
-            <li>The session folder name format: <code>yyyyMMdd_HHmmss_CUSTOMCODE_guid</code> (custom code omitted if not provided).</li>
+            <li>ZIP bomb protection: very large archives may be rejected.</li>
+            <li>Session auto-cleanup after configured retention period.</li>
         </ul>
     </div>
 </div>
+
+@section Scripts {
+<script>
+(function(){
+    const dropZone = document.getElementById('dropZone');
+    const fileInput = document.getElementById('fileInput');
+    const chooseBtn = document.getElementById('chooseBtn');
+    const fileList = document.getElementById('fileList');
+    const form = document.getElementById('zipForm');
+    const uploadBtn = document.getElementById('uploadBtn');
+    const resetBtn = document.getElementById('resetBtn');
+    const progressWrap = document.getElementById('progressWrap');
+    const progressBar = document.getElementById('uploadProgress');
+    const summary = document.getElementById('summary');
+    const summaryText = document.getElementById('summaryText');
+    const countsDiv = document.getElementById('counts');
+    const uploadMore = document.getElementById('uploadMore');
+    const alerts = document.getElementById('alerts');
+
+    let files = [];
+
+    function showAlert(type, msg){
+        const e = document.createElement('div');
+        e.className = `alert alert-${type} alert-dismissible fade show`;
+        e.innerHTML = `<strong>${type === 'danger' ? 'Error' : 'Info'}:</strong> ${msg}<button type='button' class='btn-close' data-bs-dismiss='alert'></button>`;
+        alerts.appendChild(e);
+    }
+    function clearAlerts(){ alerts.innerHTML=''; }
+
+    function renderFiles(){
+        if(files.length===0){ fileList.innerHTML='<div class="text-muted">No files selected.</div>'; uploadBtn.disabled=true; return; }
+        const list = files.map(f=>`<div>${f.name} <span class='text-muted'>(${(f.size/1024).toFixed(1)} KB)</span></div>`).join('');
+        fileList.innerHTML = list;
+        uploadBtn.disabled=false;
+    }
+
+    function addFiles(flist){
+        for(const f of flist){ if(f.type!=="application/x-zip-compressed" && !f.name.toLowerCase().endsWith('.zip')) continue; files.push(f); }
+        renderFiles();
+    }
+
+    dropZone.addEventListener('click',()=>fileInput.click());
+    chooseBtn.addEventListener('click',()=>fileInput.click());
+    fileInput.addEventListener('change',e=>{ addFiles(e.target.files); fileInput.value=''; });
+
+    dropZone.addEventListener('dragover',e=>{ e.preventDefault(); dropZone.classList.add('border-primary'); });
+    dropZone.addEventListener('dragleave',()=> dropZone.classList.remove('border-primary'));
+    dropZone.addEventListener('drop',e=>{
+        e.preventDefault(); dropZone.classList.remove('border-primary');
+        addFiles(e.dataTransfer.files);
+    });
+
+    resetBtn.addEventListener('click',()=>{ files=[]; renderFiles(); clearAlerts(); summary.classList.add('d-none'); });
+    uploadMore.addEventListener('click',()=>{ files=[]; renderFiles(); summary.classList.add('d-none'); window.scrollTo({top:0,behavior:'smooth'}); });
+
+    form.addEventListener('submit',async e=>{
+        e.preventDefault(); clearAlerts();
+        const codeInput = form.querySelector('input[name="customCode"]');
+        const code = codeInput.value.trim();
+        if(code && !/^\d{4,8}$/.test(code)){ showAlert('danger','Custom code must be 4–8 digits.'); return; }
+        if(files.length===0){ showAlert('danger','Please select at least one ZIP.'); return; }
+
+        const fd = new FormData();
+        fd.append('customCode', code);
+        const anti = form.querySelector('input[name="__RequestVerificationToken"]').value;
+        fd.append('__RequestVerificationToken', anti);
+        // Map first three files to soa/invoice/od
+        fd.append('soaZip', files[0]);
+        if(files[1]) fd.append('invoiceZip', files[1]);
+        if(files[2]) fd.append('odZip', files[2]);
+
+        progressWrap.classList.remove('d-none');
+        progressBar.style.width='5%'; progressBar.textContent='Starting...';
+
+        try{
+            const resp = await fetch('@Url.Action("UploadZipsAjax","BulkEmail")', { method:'POST', body: fd });
+            progressBar.style.width='60%'; progressBar.textContent='Processing...';
+            const json = await resp.json();
+            progressBar.style.width='100%'; progressBar.textContent='Done';
+            setTimeout(()=>progressWrap.classList.add('d-none'),800);
+            if(!json.ok){ showAlert('danger', json.error || 'Upload failed.'); return; }
+            summary.classList.remove('d-none');
+            summaryText.textContent = `Session ${json.sessionId} created with ${json.total} PDF(s).`;
+            countsDiv.innerHTML = `<span class='badge bg-info text-dark me-1'>SOA: ${json.soa}</span>`+
+                                  `<span class='badge bg-success me-1'>INV: ${json.inv}</span>`+
+                                  `<span class='badge bg-warning text-dark me-1'>OD: ${json.od}</span>`+
+                                  `<span class='badge bg-secondary'>UNK: ${json.unk}</span>`;
+            window.scrollTo({ top: summary.offsetTop - 40, behavior: 'smooth'});
+        }catch(err){ showAlert('danger', err.message); }
+    });
+
+    renderFiles();
+})();
+</script>
+}

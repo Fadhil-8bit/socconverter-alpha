@@ -356,4 +356,78 @@ public class BulkEmailController : Controller
             return Redirect(returnUrl);
         return RedirectToAction("InitiateManual");
     }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    [DisableRequestSizeLimit]
+    public async Task<IActionResult> UploadZipsAjax(IFormFile? soaZip, IFormFile? invoiceZip, IFormFile? odZip, string? customCode)
+    {
+        try
+        {
+            if ((soaZip == null || soaZip.Length == 0) && (invoiceZip == null || invoiceZip.Length == 0) && (odZip == null || odZip.Length == 0))
+                return Json(new { ok = false, error = "Please provide at least one ZIP file." });
+            if (!string.IsNullOrEmpty(customCode) && !Regex.IsMatch(customCode, "^\\d{4,8}$"))
+                return Json(new { ok = false, error = "Custom code must be 4–8 digits." });
+
+            var stamp = DateTime.UtcNow.ToString("yyyyMMdd_HHmmss");
+            var shortGuid = Guid.NewGuid().ToString("N")[..8];
+            var folderName = string.IsNullOrEmpty(customCode) ? $"{stamp}_{shortGuid}" : $"{stamp}_{customCode}_{shortGuid}";
+            var root = _paths.BulkEmailRoot;
+            Directory.CreateDirectory(root);
+            var sessionPath = Path.Combine(root, folderName);
+            Directory.CreateDirectory(sessionPath);
+
+            int totalExtracted = 0;
+            int soaCount = 0, invCount = 0, odCount = 0, unk = 0;
+
+            async Task<int> Extract(IFormFile zf)
+            {
+                if (zf is not { Length: > 0 }) return 0;
+                int extracted = 0;
+                using var zipStream = zf.OpenReadStream();
+                using var archive = new ZipArchive(zipStream, ZipArchiveMode.Read, leaveOpen: false);
+                foreach (var entry in archive.Entries)
+                {
+                    if (string.IsNullOrEmpty(entry.Name)) continue;
+                    if (!Path.GetExtension(entry.Name).Equals(".pdf", StringComparison.OrdinalIgnoreCase)) continue;
+                    var fileName = Path.GetFileName(entry.Name);
+                    var destPath = Path.Combine(sessionPath, fileName);
+                    var baseName = Path.GetFileNameWithoutExtension(fileName);
+                    int suffix = 1;
+                    while (System.IO.File.Exists(destPath))
+                    {
+                        destPath = Path.Combine(sessionPath, $"{baseName}_{suffix}.pdf");
+                        suffix++;
+                    }
+                    using var entryStream = entry.Open();
+                    using var outStream = System.IO.File.Create(destPath);
+                    await entryStream.CopyToAsync(outStream);
+                    extracted++;
+                    var upper = fileName.ToUpperInvariant();
+                    if (upper.Contains("SOA")) soaCount++;
+                    else if (upper.Contains("INV") || upper.Contains("INVOICE")) invCount++;
+                    else if (upper.Contains("OD") || upper.Contains("OVERDUE")) odCount++;
+                    else unk++;
+                }
+                return extracted;
+            }
+
+            totalExtracted += await Extract(soaZip);
+            totalExtracted += await Extract(invoiceZip);
+            totalExtracted += await Extract(odZip);
+
+            if (totalExtracted == 0)
+            {
+                try { Directory.Delete(sessionPath, true); } catch { }
+                return Json(new { ok = false, error = "No PDF files found in provided ZIP(s)." });
+            }
+
+            return Json(new { ok = true, sessionId = folderName, total = totalExtracted, soa = soaCount, inv = invCount, od = odCount, unk });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "UploadZipsAjax error");
+            return Json(new { ok = false, error = ex.Message });
+        }
+    }
 }
