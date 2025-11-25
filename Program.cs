@@ -15,6 +15,7 @@ builder.Services.Configure<FormOptions>(o =>
 builder.Services.AddControllersWithViews();
 
 // Register existing services
+builder.Services.AddSingleton<IStoragePaths, StoragePaths>();
 builder.Services.AddSingleton<PdfService>();
 builder.Services.AddSingleton<UploadFolderService>();
 
@@ -31,6 +32,9 @@ else
 // Register bulk email services
 builder.Services.AddSingleton<IBulkEmailService, BulkEmailService>();
 builder.Services.AddSingleton<IEmailSender, EmailSenderService>();
+
+// Add hosted services
+builder.Services.AddHostedService<BulkEmailRetentionService>();
 
 var app = builder.Build();
 

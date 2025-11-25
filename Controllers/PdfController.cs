@@ -4,6 +4,7 @@ using socconvertor.Models;
 using System.IO.Compression;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
+using System.IO;
 
 namespace socconvertor.Controllers;
 
@@ -12,12 +13,14 @@ public class PdfController : Controller
     private readonly PdfService _pdfService;
     private readonly UploadFolderService _uploadFolderService;
     private readonly ILogger<PdfController> _logger;
+    private readonly IStoragePaths _paths;
 
-    public PdfController(PdfService pdfService, UploadFolderService uploadFolderService, ILogger<PdfController> logger)
+    public PdfController(PdfService pdfService, UploadFolderService uploadFolderService, ILogger<PdfController> logger, IStoragePaths paths)
     {
         _pdfService = pdfService;
         _uploadFolderService = uploadFolderService;
         _logger = logger;
+        _paths = paths;
     }
 
     [HttpGet]
@@ -39,22 +42,8 @@ public class PdfController : Controller
         if (!string.IsNullOrEmpty(folderId) && !System.Text.RegularExpressions.Regex.IsMatch(folderId, @"^[a-zA-Z0-9_\-]+$"))
             return BadRequest("Invalid folder ID");
 
-        // Build folder path - use folderId if provided, otherwise fallback to shared Temp
-        string folder;
-        if (!string.IsNullOrEmpty(folderId))
-        {
-            var baseTemp = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "Temp");
-            folder = Path.Combine(baseTemp, folderId);
-        }
-        else
-        {
-            // Fallback: try TempData, then shared Temp
-            var uploadFolderObj = TempData.Peek("UploadFolder");
-            string? uploadFolder = uploadFolderObj as string;
-            folder = !string.IsNullOrEmpty(uploadFolder)
-                ? uploadFolder
-                : Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "Temp");
-        }
+        var baseRoot = _paths.SplitRoot;
+        string folder = !string.IsNullOrEmpty(folderId) ? Path.Combine(baseRoot, folderId) : (TempData.Peek("UploadFolder") as string ?? baseRoot);
 
         string filePath = Path.Combine(folder, fileName);
 
@@ -94,10 +83,6 @@ public class PdfController : Controller
             ViewBag.Message = "Custom code must be 4 to 8 digits.";
             return View("Index");
         }
-
-        string tempFolder = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "Temp");
-        // Ensure the shared temp folder exists (we won't clear it because uploads are stored per-folder)
-        Directory.CreateDirectory(tempFolder);
 
         // create a per-upload folder and save the original PDF to an 'original' subfolder
         string uploadFolder = _uploadFolderService.CreateUploadFolder();
@@ -275,26 +260,8 @@ public class PdfController : Controller
         if (!string.IsNullOrEmpty(folderId) && !System.Text.RegularExpressions.Regex.IsMatch(folderId, @"^[a-zA-Z0-9_\-]+$"))
             return BadRequest("Invalid folder ID");
 
-        // Build folder path
-        string folder;
-        if (!string.IsNullOrEmpty(folderId))
-        {
-            var baseTemp = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "Temp");
-            folder = Path.Combine(baseTemp, folderId);
-        }
-        else
-        {
-            // Fallback: try TempData
-            var currentFiles = TempData["CurrentSplitFiles"]?.ToString();
-            if (string.IsNullOrEmpty(currentFiles))
-                return NotFound("No files found for download.");
-
-            var uploadFolderObj = TempData.Peek("UploadFolder");
-            string? uploadFolder = uploadFolderObj as string;
-            folder = !string.IsNullOrEmpty(uploadFolder)
-                ? uploadFolder
-                : Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "Temp");
-        }
+        var root = _paths.SplitRoot;
+        string folder = !string.IsNullOrEmpty(folderId) ? Path.Combine(root, folderId) : (TempData.Peek("UploadFolder") as string ?? root);
 
         // Check folder exists
         if (!Directory.Exists(folder))
@@ -389,8 +356,7 @@ public class PdfController : Controller
         if (string.IsNullOrWhiteSpace(folderId) || !Regex.IsMatch(folderId, @"^[a-zA-Z0-9_\\-]+$"))
             return BadRequest("Invalid folder ID");
 
-        var baseTemp = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "Temp");
-        var sessionPath = Path.Combine(baseTemp, folderId);
+        var sessionPath = Path.Combine(_paths.SplitRoot, folderId);
         if (!Directory.Exists(sessionPath))
             return NotFound("Session folder not found");
 
@@ -428,20 +394,16 @@ public class PdfController : Controller
 
         try
         {
-            var baseTemp = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "Temp");
-            var sessionPath = Path.Combine(baseTemp, folderId);
+            var sessionPath = Path.Combine(_paths.SplitRoot, folderId);
             if (!Directory.Exists(sessionPath))
             {
                 TempData["ErrorMessage"] = "Session not found.";
                 return RedirectToAction("InitiateManual", "BulkEmail");
             }
-            else
-            {
-                Directory.Delete(sessionPath, true);
-                TempData["SuccessMessage"] = $"Session '{folderId}' deleted.";
-                // After deleting from split result, return to select sessions page
-                return RedirectToAction("InitiateManual", "BulkEmail");
-            }
+            Directory.Delete(sessionPath, true);
+            TempData["SuccessMessage"] = $"Session '{folderId}' deleted.";
+            // After deleting from split result, return to select sessions page
+            return RedirectToAction("InitiateManual", "BulkEmail");
         }
         catch (Exception ex)
         {
