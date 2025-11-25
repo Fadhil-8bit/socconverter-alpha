@@ -36,3 +36,6 @@ bld/
 *.log
 build.log
 run.log
+
+# Bulk email sessions (outside webroot)
+Data/BulkEmailSessions/
