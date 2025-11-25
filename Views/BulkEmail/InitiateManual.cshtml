@@ -84,15 +84,14 @@
                                         <a class="btn btn-sm btn-outline-success" href="@Url.Action("DownloadAll", "Pdf", new { folderId = s.Id })">
                                             <i class="bi bi-download"></i> Zip
                                         </a>
-                                        <button type="submit"
-                                                class="btn btn-sm btn-outline-danger"
-                                                name="folderId"
-                                                value="@s.Id"
-                                                formaction="@Url.Action("DeleteSession", "Pdf")"
-                                                formmethod="post"
-                                                onclick="return confirm('Delete session @s.Id ?');">
-                                            <i class="bi bi-trash"></i> Delete
-                                        </button>
+                                        <form class="d-inline" method="post" asp-action="DeleteSession" asp-controller="BulkEmail" onsubmit="return confirm('Delete session @s.Id ?');">
+                                            @Html.AntiForgeryToken()
+                                            <input type="hidden" name="folderId" value="@s.Id" />
+                                            <input type="hidden" name="returnUrl" value="@Url.Action("InitiateManual", "BulkEmail")" />
+                                            <button type="submit" class="btn btn-sm btn-outline-danger">
+                                                <i class="bi bi-trash"></i> Delete
+                                            </button>
+                                        </form>
                                     </div>
                                 </div>
                             </div>

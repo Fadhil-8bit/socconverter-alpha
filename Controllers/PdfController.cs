@@ -383,33 +383,37 @@ public class PdfController : Controller
 
     [HttpPost]
     [ValidateAntiForgeryToken]
-    public IActionResult DeleteSession(string folderId)
+    public IActionResult DeleteSession(string folderId, string? returnUrl)
     {
-        if (string.IsNullOrWhiteSpace(folderId) || !Regex.IsMatch(folderId, "^[a-zA-Z0-9_\\-]+$"))
+        if (string.IsNullOrWhiteSpace(folderId) || !Regex.IsMatch(folderId, @"^[a-zA-Z0-9_\-]+$"))
         {
             TempData["ErrorMessage"] = "Invalid session id.";
-            // Redirect back to select sessions page
-            return RedirectToAction("InitiateManual", "BulkEmail");
+            return SafeRedirect(returnUrl);
         }
-
         try
         {
             var sessionPath = Path.Combine(_paths.SplitRoot, folderId);
             if (!Directory.Exists(sessionPath))
             {
                 TempData["ErrorMessage"] = "Session not found.";
-                return RedirectToAction("InitiateManual", "BulkEmail");
+                return SafeRedirect(returnUrl);
             }
             Directory.Delete(sessionPath, true);
             TempData["SuccessMessage"] = $"Session '{folderId}' deleted.";
-            // After deleting from split result, return to select sessions page
-            return RedirectToAction("InitiateManual", "BulkEmail");
+            return SafeRedirect(returnUrl);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error deleting session {FolderId}", folderId);
             TempData["ErrorMessage"] = $"Error deleting session: {ex.Message}";
-            return RedirectToAction("InitiateManual", "BulkEmail");
+            return SafeRedirect(returnUrl);
         }
+    }
+
+    private IActionResult SafeRedirect(string? returnUrl)
+    {
+        if (!string.IsNullOrEmpty(returnUrl) && Url.IsLocalUrl(returnUrl))
+            return Redirect(returnUrl);
+        return RedirectToAction("InitiateManual", "BulkEmail");
     }
 }

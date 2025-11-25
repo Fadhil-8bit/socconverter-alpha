@@ -31,10 +31,7 @@
                 <div class="card-body text-center">
                     <h5 class="card-title">Sessions</h5>
                     <h2 class="text-primary">@Model.TotalSessions</h2>
-                    <p class="text-muted mb-2">Total session folders</p>
-                    <a class="btn btn-outline-primary btn-sm" href="@Url.Action("InitiateManual", "BulkEmail")">
-                        <i class="bi bi-collection"></i> Select Sessions
-                    </a>
+                    <p class="text-muted mb-0">Split: @Model.SplitSessionsCount | Bulk: @Model.BulkSessionsCount</p>
                 </div>
             </div>
         </div>
@@ -43,10 +40,7 @@
                 <div class="card-body text-center">
                     <h5 class="card-title">PDF Files</h5>
                     <h2 class="text-success">@Model.TotalPdfs</h2>
-                    <p class="text-muted mb-2">Split output files</p>
-                    <a class="btn btn-outline-success btn-sm" href="@Url.Action("Index", "Pdf")">
-                        <i class="bi bi-upload"></i> Upload & Split
-                    </a>
+                    <p class="text-muted mb-0">Split: @Model.SplitPdfCount | Bulk: @Model.BulkPdfCount</p>
                 </div>
             </div>
         </div>
@@ -55,10 +49,7 @@
                 <div class="card-body text-center">
                     <h5 class="card-title">Storage Used</h5>
                     <h2 class="text-info">@Model.TotalSizeFormatted</h2>
-                    <p class="text-muted mb-2">PDF aggregate size</p>
-                    <a class="btn btn-outline-info btn-sm" href="@Url.Action("Initiate", "BulkEmail", new { folderId = (Model.RecentSessions.FirstOrDefault()?.Id ?? "") })" disabled="@(Model.RecentSessions.Count == 0)">
-                        <i class="bi bi-envelope"></i> Quick Bulk Email
-                    </a>
+                    <p class="text-muted mb-0">Across split and bulk roots</p>
                 </div>
             </div>
         </div>
@@ -67,12 +58,9 @@
                 <div class="card-body text-center">
                     <h5 class="card-title">Actions</h5>
                     <div class="d-grid gap-2">
-                        <a class="btn btn-primary btn-sm" href="@Url.Action("Index", "Pdf")"><i class="bi bi-upload"></i> Upload PDF</a>
-                        <a class="btn btn-success btn-sm" href="@Url.Action("InitiateManual", "BulkEmail")"><i class="bi bi-collection"></i> Select Sessions</a>
-                        @if (Model.RecentSessions.Any())
-                        {
-                            <a class="btn btn-warning btn-sm" href="@Url.Action("Initiate", "BulkEmail", new { folderId = Model.RecentSessions.First().Id })"><i class="bi bi-envelope"></i> Bulk Email Latest</a>
-                        }
+                        <a class="btn btn-primary btn-sm" href="@Url.Action("Index", "Pdf")"><i class="bi bi-upload"></i> Split PDFs</a>
+                        <a class="btn btn-success btn-sm" href="@Url.Action("UploadZips", "BulkEmail")"><i class="bi bi-box"></i> Create Session (ZIP)</a>
+                        <a class="btn btn-warning btn-sm" href="@Url.Action("InitiateManual", "BulkEmail")"><i class="bi bi-envelope"></i> Send Bulk Email</a>
                     </div>
                 </div>
             </div>
@@ -81,13 +69,12 @@
 
     <div class="card mb-4">
         <div class="card-header d-flex justify-content-between align-items-center">
-            <h5 class="mb-0">Recent Sessions</h5>
-            <a class="btn btn-sm btn-outline-secondary" href="@Url.Action("InitiateManual", "BulkEmail")">View All</a>
+            <h5 class="mb-0">Recent Activity</h5>
         </div>
         <div class="card-body">
-            @if (!Model.RecentSessions.Any())
+            @if (!(Model.RecentActivities?.Any() ?? false))
             {
-                <div class="text-muted">No sessions found yet. Upload a PDF to get started.</div>
+                <div class="text-muted">No activity yet. Get started by splitting a PDF or uploading ZIPs.</div>
             }
             else
             {
@@ -95,27 +82,32 @@
                     <table class="table table-sm table-hover align-middle">
                         <thead>
                             <tr>
+                                <th>Origin</th>
                                 <th>Session ID</th>
                                 <th>PDFs</th>
                                 <th>Size</th>
                                 <th>Last Modified</th>
-                                <th></th>
+                                <th class="text-end">Delete</th>
                             </tr>
                         </thead>
                         <tbody>
-                            @foreach (var s in Model.RecentSessions)
+                            @foreach (var s in Model.RecentActivities)
                             {
                                 <tr>
+                                    <td><span class="badge @(s.Origin == "split" ? "bg-primary" : "bg-dark")">@s.Origin.ToUpperInvariant()</span></td>
                                     <td><code>@s.Id</code></td>
                                     <td>@s.PdfCount</td>
                                     <td>@s.TotalSizeFormatted</td>
                                     <td>@s.LastModifiedUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td>
                                     <td class="text-end">
-                                        <div class="btn-group btn-group-sm" role="group">
-                                            <a class="btn btn-outline-primary" href="@Url.Action("ViewSession", "Pdf", new { folderId = s.Id })"><i class="bi bi-eye"></i></a>
-                                            <a class="btn btn-outline-success" href="@Url.Action("DownloadAll", "Pdf", new { folderId = s.Id })"><i class="bi bi-download"></i></a>
-                                            <a class="btn btn-outline-warning" href="@Url.Action("Initiate", "BulkEmail", new { folderId = s.Id })"><i class="bi bi-envelope"></i></a>
-                                        </div>
+                                        <form method="post" class="d-inline" asp-action="DeleteSession" asp-controller="@(s.Origin == "split" ? "Pdf" : "BulkEmail")">
+                                            @Html.AntiForgeryToken()
+                                            <input type="hidden" name="folderId" value="@s.Id" />
+                                            <input type="hidden" name="returnUrl" value="@Url.Action("Index", "Home")" />
+                                            <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete" onclick="return confirm('Delete session @s.Id ?');">
+                                                <img src="~/delete.ico" alt="Delete" style="width:16px;height:16px;" />
+                                            </button>
+                                        </form>
                                     </td>
                                 </tr>
                             }
