@@ -183,17 +183,18 @@
             rateVal.textContent=j.ratePerMinute;
             statusText.textContent='Status: '+j.status;
 
-            // Show auto-pause alert if status=PartiallyDeferred and failed count is rising rapidly (indicating consecutive failures)
+            // Show auto-pause alert if status=PartiallyDeferred and resume is soon
             if (j.status === 'PartiallyDeferred' && j.nextResumeUtc) {
                 const resumeTime = new Date(j.nextResumeUtc);
                 const now = new Date();
                 const minutesUntilResume = Math.max(0, Math.round((resumeTime - now) / 60000));
                 
-                // If recently failed (failed count increased and resume is soon), show auto-pause alert
-                if (j.failed > lastFailedCount && minutesUntilResume < 30) {
+                // Show alert if resume is within 30 minutes (likely an auto-pause from consecutive failures)
+                if (minutesUntilResume < 30) {
                     pauseAlert.classList.remove('d-none');
                     resumeText.textContent = `Auto-resume in ~${minutesUntilResume} minute(s) (UTC: ${j.nextResumeUtc})`;
                 } else {
+                    // Long defer (e.g., daily/hourly cap), hide alert and show normal resume text
                     pauseAlert.classList.add('d-none');
                     resumeText.textContent = j.nextResumeUtc ? 'Next Resume (UTC): '+ j.nextResumeUtc : '';
                 }
