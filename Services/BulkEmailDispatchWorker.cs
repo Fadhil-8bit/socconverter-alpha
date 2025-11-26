@@ -36,7 +36,7 @@ public class BulkEmailDispatchWorker : BackgroundService
             {
                 _logger.LogError(ex, "Error in dispatch loop");
             }
-            await Task.Delay(TimeSpan.FromSeconds(10), stoppingToken);
+            await Task.Delay(TimeSpan.FromSeconds(2), stoppingToken);
         }
     }
 
