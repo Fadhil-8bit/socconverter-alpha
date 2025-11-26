@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Mvc;
 using socconvertor.Services;
 using socconvertor.Models.BulkEmail;
 using socconvertor.Models.Email;
@@ -395,7 +395,7 @@ public class BulkEmailController : Controller
         }
         if (!string.IsNullOrEmpty(customCode) && !Regex.IsMatch(customCode, "^\\d{4,8}$"))
         {
-            TempData["ErrorMessage"] = "Custom code must be 4�8 digits.";
+            TempData["ErrorMessage"] = "Custom code must be 4–8 digits.";
             return RedirectToAction("UploadZips");
         }
 
@@ -506,7 +506,7 @@ public class BulkEmailController : Controller
             if ((soaZip == null || soaZip.Length == 0) && (invoiceZip == null || invoiceZip.Length == 0) && (odZip == null || odZip.Length == 0))
                 return Json(new { ok = false, error = "Please provide at least one ZIP file." });
             if (!string.IsNullOrEmpty(customCode) && !Regex.IsMatch(customCode, "^\\d{4,8}$"))
-                return Json(new { ok = false, error = "Custom code must be 4�8 digits." });
+                return Json(new { ok = false, error = "Custom code must be 4–8 digits." });
 
             var stamp = DateTime.UtcNow.ToString("yyyyMMdd_HHmmss");
             var shortGuid = Guid.NewGuid().ToString("N")[..8];
@@ -590,7 +590,7 @@ public class BulkEmailController : Controller
     }
 
     /// <summary>
-    /// Save debtor?email mappings via JSON to avoid large form field posts.
+    /// Save debtor→email mappings via JSON to avoid large form field posts.
     /// </summary>
     [HttpPost]
     [ValidateAntiForgeryToken]
@@ -617,6 +617,7 @@ public class BulkEmailController : Controller
         }
 
         var total = query.Count();
+        // replace the projection in JobItemsJson to serialize lastAttemptUtc as ISO-8601 string
         var items = query
             .OrderBy(i => i.DebtorCode)
             .Skip((page - 1) * pageSize)
@@ -626,7 +627,7 @@ public class BulkEmailController : Controller
                 debtorCode = i.DebtorCode,
                 email = i.EmailAddress,
                 status = i.Status.ToString(),
-                lastAttemptUtc = i.LastAttemptUtc,
+                lastAttemptUtc = i.LastAttemptUtc.HasValue ? i.LastAttemptUtc.Value.ToString("o") : null,
                 error = i.Error
             })
             .ToList();

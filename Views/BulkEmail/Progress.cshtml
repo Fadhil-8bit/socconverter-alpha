@@ -32,6 +32,9 @@
             <p id="remainingText" class="text-muted"></p>
             <p id="todayText" class="text-muted"></p>
             <p id="tomorrowText" class="text-muted"></p>
+            <div id="pauseAlert" class="alert alert-warning d-none" role="alert">
+                <i class="bi bi-exclamation-triangle-fill"></i> <strong>Auto-paused:</strong> Job paused after consecutive send failures (likely SMTP host unreachable). Will auto-resume shortly.
+            </div>
             <div class="d-flex gap-2 mt-2">
                 @if (Model.Status == socconvertor.Models.Email.EmailDispatchJobStatus.Queued || Model.Status == socconvertor.Models.Email.EmailDispatchJobStatus.Running || Model.Status == socconvertor.Models.Email.EmailDispatchJobStatus.PartiallyDeferred)
                 {
@@ -87,15 +90,15 @@
     const jobId='@Model.JobId';
     const sentVal=el('sentVal'); const failVal=el('failVal'); const defVal=el('defVal'); const pendVal=el('pendVal'); const totalVal=el('totalVal');
     const rateVal=el('rateVal'); const statusText=el('statusText'); const resumeText=el('resumeText'); const etaText=el('etaText'); const remainingText=el('remainingText');
-    const todayText=el('todayText'); const tomorrowText=el('tomorrowText');
+    const todayText=el('todayText'); const tomorrowText=el('tomorrowText'); const pauseAlert=el('pauseAlert');
     const barSent=el('barSent'); const barFailed=el('barFailed'); const barDeferred=el('barDeferred'); const barPending=el('barPending'); const barLabel=el('barLabel');
+
+    function el(id){return document.getElementById(id);}
 
     // Item list state
     let currentTab = 'Sent';
     const itemPages = { Sent: 1, Pending: 1, Failed: 1 };
     const pageSize = 50;
-
-    function el(id){return document.getElementById(id);}    
 
     async function fetchItems(status, page = 1) {
         try {
@@ -121,7 +124,7 @@
             html += '<tr><td colspan="5" class="text-muted text-center">No items</td></tr>';
         } else {
             for (const item of items) {
-                const lastAttempt = item.lastAttemptUtc ? new Date(item.lastAttemptUtc + 'Z').toLocaleString() : '-';
+                const lastAttempt = item.lastAttemptUtc ? new Date(item.lastAttemptUtc).toLocaleString() : '-';
                 const error = item.error ? `<small class="text-danger">${escapeHtml(item.error.substring(0, 100))}</small>` : '-';
                 html += `<tr><td><strong>${escapeHtml(item.debtorCode)}</strong></td><td>${escapeHtml(item.email)}</td><td><span class="badge bg-${statusBadge(item.status)}">${item.status}</span></td><td><small>${lastAttempt}</small></td><td>${error}</td></tr>`;
             }
@@ -169,6 +172,8 @@
     document.getElementById('pending-tab').addEventListener('click', () => { currentTab = 'Pending'; fetchItems('Pending', itemPages.Pending); });
     document.getElementById('failed-tab').addEventListener('click', () => { currentTab = 'Failed'; fetchItems('Failed', itemPages.Failed); });
 
+    let lastFailedCount = 0;
+
     async function poll(){
         try{
             const r=await fetch('@Url.Action("ProgressJson","BulkEmail")?jobId='+jobId);
@@ -177,7 +182,28 @@
             sentVal.textContent=j.sent; failVal.textContent=j.failed; defVal.textContent=j.deferred; pendVal.textContent=j.pending; totalVal.textContent=j.total;
             rateVal.textContent=j.ratePerMinute;
             statusText.textContent='Status: '+j.status;
-            if(j.nextResumeUtc){ resumeText.textContent='Next Resume (UTC): '+ j.nextResumeUtc; } else resumeText.textContent='';
+
+            // Show auto-pause alert if status=PartiallyDeferred and failed count is rising rapidly (indicating consecutive failures)
+            if (j.status === 'PartiallyDeferred' && j.nextResumeUtc) {
+                const resumeTime = new Date(j.nextResumeUtc);
+                const now = new Date();
+                const minutesUntilResume = Math.max(0, Math.round((resumeTime - now) / 60000));
+                
+                // If recently failed (failed count increased and resume is soon), show auto-pause alert
+                if (j.failed > lastFailedCount && minutesUntilResume < 30) {
+                    pauseAlert.classList.remove('d-none');
+                    resumeText.textContent = `Auto-resume in ~${minutesUntilResume} minute(s) (UTC: ${j.nextResumeUtc})`;
+                } else {
+                    pauseAlert.classList.add('d-none');
+                    resumeText.textContent = j.nextResumeUtc ? 'Next Resume (UTC): '+ j.nextResumeUtc : '';
+                }
+            } else {
+                pauseAlert.classList.add('d-none');
+                resumeText.textContent = j.nextResumeUtc ? 'Next Resume (UTC): '+ j.nextResumeUtc : '';
+            }
+
+            lastFailedCount = j.failed;
+
             if(j.etaMinutes){ etaText.textContent='Estimated completion in ~'+ j.etaMinutes +' minute(s).'; } else etaText.textContent='';
             remainingText.textContent='Remaining: '+ j.remaining;
 

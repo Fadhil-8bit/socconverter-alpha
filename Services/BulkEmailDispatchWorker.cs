@@ -58,6 +58,8 @@ public class BulkEmailDispatchWorker : BackgroundService
             int maxPerMinute = int.Parse(_config["Email:RateLimit:MaxPerMinute"] ?? "0");
             int maxPerDay = int.Parse(_config["Email:RateLimit:MaxPerDay"] ?? "0");
             int batchSize = int.Parse(_config["Email:RateLimit:BatchSize"] ?? "50");
+            int failurePauseThreshold = int.Parse(_config["Email:RateLimit:FailurePauseThreshold"] ?? "5");
+            int failurePauseMinutes = int.Parse(_config["Email:RateLimit:FailurePauseMinutes"] ?? "15");
 
             // Compute adaptive per-item delay from rate caps
             int calcDelayFromMinute = maxPerMinute > 0 ? (int)Math.Ceiling(60000.0 / maxPerMinute) : 0;
@@ -69,6 +71,7 @@ public class BulkEmailDispatchWorker : BackgroundService
             DateOnly today = DateOnly.FromDateTime(DateTime.UtcNow);
             int sentToday = job.Items.Count(i => i.Status == EmailDispatchItemStatus.Sent && i.LastAttemptUtc.HasValue && DateOnly.FromDateTime(i.LastAttemptUtc.Value) == today);
             int processedInBatch = 0;
+            int consecutiveFailures = 0;
 
             foreach (var item in job.Items.Where(i => i.Status == EmailDispatchItemStatus.Pending || i.Status == EmailDispatchItemStatus.Deferred))
             {
@@ -165,6 +168,21 @@ public class BulkEmailDispatchWorker : BackgroundService
                     sentThisHour++;
                     sentToday++;
                     processedInBatch++;
+                    consecutiveFailures = 0;
+                }
+                else
+                {
+                    consecutiveFailures++;
+                    _logger.LogWarning("Job {JobId}: consecutive failures={Count}", job.JobId, consecutiveFailures);
+
+                    if (failurePauseThreshold > 0 && consecutiveFailures >= failurePauseThreshold)
+                    {
+                        job.Status = EmailDispatchJobStatus.PartiallyDeferred;
+                        job.NextResumeUtc = DateTime.UtcNow.AddMinutes(failurePauseMinutes);
+                        _queue.UpdateJob(job);
+                        _logger.LogWarning("Job {JobId} auto-paused for {Minutes} minutes after {Count} consecutive failures (likely SMTP host down)", job.JobId, failurePauseMinutes, consecutiveFailures);
+                        break;
+                    }
                 }
 
                 // Batch checkpoint and delay
