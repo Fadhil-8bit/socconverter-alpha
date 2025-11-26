@@ -602,4 +602,35 @@ public class BulkEmailController : Controller
         await _bulkEmailService.UpdateEmailAddressesAsync(sessionId, mappings);
         return Json(new { ok=true, count=mappings.Count });
     }
+
+    [HttpGet]
+    public IActionResult JobItemsJson(string jobId, int page = 1, int pageSize = 100, string? status = null)
+    {
+        var job = _dispatchQueue.GetJob(jobId);
+        if (job == null) return Json(new { ok = false, error = "Job not found" });
+
+        var query = job.Items.AsEnumerable();
+        if (!string.IsNullOrWhiteSpace(status))
+        {
+            if (Enum.TryParse<EmailDispatchItemStatus>(status, true, out var statusEnum))
+                query = query.Where(i => i.Status == statusEnum);
+        }
+
+        var total = query.Count();
+        var items = query
+            .OrderBy(i => i.DebtorCode)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(i => new
+            {
+                debtorCode = i.DebtorCode,
+                email = i.EmailAddress,
+                status = i.Status.ToString(),
+                lastAttemptUtc = i.LastAttemptUtc,
+                error = i.Error
+            })
+            .ToList();
+
+        return Json(new { ok = true, jobId = job.JobId, total, page, pageSize, items });
+    }
 }

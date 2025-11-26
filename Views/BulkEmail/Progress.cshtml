@@ -49,6 +49,35 @@
         </div>
     </div>
 
+    <div class="card mb-4">
+        <div class="card-header">
+            <ul class="nav nav-tabs card-header-tabs" id="itemsTabs" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active" id="sent-tab" data-bs-toggle="tab" data-bs-target="#sent-pane" type="button" role="tab">Sent (<span id="sentCount">0</span>)</button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="pending-tab" data-bs-toggle="tab" data-bs-target="#pending-pane" type="button" role="tab">Pending (<span id="pendingCount">0</span>)</button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="failed-tab" data-bs-toggle="tab" data-bs-target="#failed-pane" type="button" role="tab">Failed (<span id="failedCount">0</span>)</button>
+                </li>
+            </ul>
+        </div>
+        <div class="card-body">
+            <div class="tab-content" id="itemsTabContent">
+                <div class="tab-pane fade show active" id="sent-pane" role="tabpanel">
+                    <div id="sentItems"></div>
+                </div>
+                <div class="tab-pane fade" id="pending-pane" role="tabpanel">
+                    <div id="pendingItems"></div>
+                </div>
+                <div class="tab-pane fade" id="failed-pane" role="tabpanel">
+                    <div id="failedItems"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <a class="btn btn-secondary" href="@Url.Action("InitiateManual","BulkEmail")">Back to Sessions</a>
 </div>
 
@@ -61,7 +90,84 @@
     const todayText=el('todayText'); const tomorrowText=el('tomorrowText');
     const barSent=el('barSent'); const barFailed=el('barFailed'); const barDeferred=el('barDeferred'); const barPending=el('barPending'); const barLabel=el('barLabel');
 
+    // Item list state
+    let currentTab = 'Sent';
+    const itemPages = { Sent: 1, Pending: 1, Failed: 1 };
+    const pageSize = 50;
+
     function el(id){return document.getElementById(id);}    
+
+    async function fetchItems(status, page = 1) {
+        try {
+            const r = await fetch(`@Url.Action("JobItemsJson","BulkEmail")?jobId=${encodeURIComponent(jobId)}&status=${encodeURIComponent(status)}&page=${page}&pageSize=${pageSize}`);
+            const j = await r.json();
+            if (!j.ok) { console.error('Failed to load items:', j.error); return; }
+            renderItemsTable(status, j.items, j.page, j.pageSize, j.total);
+        } catch (e) {
+            console.error('Error fetching items:', e);
+        }
+    }
+
+    function renderItemsTable(status, items, page, pageSize, total) {
+        const containerId = status.toLowerCase() + 'Items';
+        const container = document.getElementById(containerId);
+        if (!container) return;
+
+        const totalPages = Math.ceil(total / pageSize);
+
+        let html = '<div class="table-responsive"><table class="table table-sm table-hover align-middle"><thead><tr><th>Debtor Code</th><th>Email</th><th>Status</th><th>Last Attempt</th><th>Error</th></tr></thead><tbody>';
+        
+        if (items.length === 0) {
+            html += '<tr><td colspan="5" class="text-muted text-center">No items</td></tr>';
+        } else {
+            for (const item of items) {
+                const lastAttempt = item.lastAttemptUtc ? new Date(item.lastAttemptUtc + 'Z').toLocaleString() : '-';
+                const error = item.error ? `<small class="text-danger">${escapeHtml(item.error.substring(0, 100))}</small>` : '-';
+                html += `<tr><td><strong>${escapeHtml(item.debtorCode)}</strong></td><td>${escapeHtml(item.email)}</td><td><span class="badge bg-${statusBadge(item.status)}">${item.status}</span></td><td><small>${lastAttempt}</small></td><td>${error}</td></tr>`;
+            }
+        }
+        html += '</tbody></table></div>';
+
+        // Add pager
+        if (totalPages > 1) {
+            html += '<nav><ul class="pagination pagination-sm justify-content-center">';
+            if (page > 1) html += `<li class="page-item"><a class="page-link" href="#" data-page="${page - 1}">Previous</a></li>`;
+            for (let p = Math.max(1, page - 2); p <= Math.min(totalPages, page + 2); p++) {
+                html += `<li class="page-item ${p === page ? 'active' : ''}"><a class="page-link" href="#" data-page="${p}">${p}</a></li>`;
+            }
+            if (page < totalPages) html += `<li class="page-item"><a class="page-link" href="#" data-page="${page + 1}">Next</a></li>`;
+            html += '</ul></nav>';
+        }
+
+        container.innerHTML = html;
+
+        // Attach pager handlers
+        container.querySelectorAll('.page-link').forEach(link => {
+            link.addEventListener('click', (e) => {
+                e.preventDefault();
+                const newPage = parseInt(e.target.getAttribute('data-page'), 10);
+                itemPages[status] = newPage;
+                fetchItems(status, newPage);
+            });
+        });
+    }
+
+    function escapeHtml(text) {
+        const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' };
+        return text.replace(/[&<>"']/g, m => map[m]);
+    }
+
+    function statusBadge(status) {
+        if (status === 'Sent') return 'success';
+        if (status === 'Failed') return 'danger';
+        if (status === 'Pending' || status === 'Deferred') return 'secondary';
+        return 'info';
+    }
+
+    // Tab click handlers
+    document.getElementById('sent-tab').addEventListener('click', () => { currentTab = 'Sent'; fetchItems('Sent', itemPages.Sent); });
+    document.getElementById('pending-tab').addEventListener('click', () => { currentTab = 'Pending'; fetchItems('Pending', itemPages.Pending); });
+    document.getElementById('failed-tab').addEventListener('click', () => { currentTab = 'Failed'; fetchItems('Failed', itemPages.Failed); });
 
     async function poll(){
         try{
@@ -74,6 +180,11 @@
             if(j.nextResumeUtc){ resumeText.textContent='Next Resume (UTC): '+ j.nextResumeUtc; } else resumeText.textContent='';
             if(j.etaMinutes){ etaText.textContent='Estimated completion in ~'+ j.etaMinutes +' minute(s).'; } else etaText.textContent='';
             remainingText.textContent='Remaining: '+ j.remaining;
+
+            // Update tab counts
+            document.getElementById('sentCount').textContent = j.sent;
+            document.getElementById('pendingCount').textContent = j.pending;
+            document.getElementById('failedCount').textContent = j.failed;
 
             // Daily cap visibility
             if (typeof j.maxPerDay !== 'undefined') {
@@ -99,6 +210,9 @@
             setTimeout(poll,4000);
         }catch(e){ statusText.textContent='Polling error: '+e.message; setTimeout(poll,6000); }
     }
+
+    // Initial load
+    fetchItems('Sent', 1);
     poll();
 })();
 </script>
