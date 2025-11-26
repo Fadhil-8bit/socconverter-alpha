@@ -30,6 +30,7 @@ public class BulkEmailDispatchWorker : BackgroundService
         {
             try
             {
+                _logger.LogDebug("Worker polling for jobs...");
                 await ProcessJobsAsync(stoppingToken);
             }
             catch (Exception ex)
@@ -43,13 +44,24 @@ public class BulkEmailDispatchWorker : BackgroundService
     private async Task ProcessJobsAsync(CancellationToken ct)
     {
         var jobs = _queue.GetAllJobs().Where(j => j.Status == EmailDispatchJobStatus.Queued || j.Status == EmailDispatchJobStatus.Running || j.Status == EmailDispatchJobStatus.PartiallyDeferred).ToList();
+        
+        if (jobs.Count > 0)
+        {
+            _logger.LogInformation("Worker found {JobCount} job(s) to process", jobs.Count);
+        }
+        
         foreach (var job in jobs)
         {
             if (ct.IsCancellationRequested) return;
             if (job.NextResumeUtc.HasValue && job.NextResumeUtc.Value > DateTime.UtcNow)
+            {
+                _logger.LogDebug("Job {JobId} deferred until {ResumeTime}", job.JobId, job.NextResumeUtc);
                 continue; // wait until resume time
+            }
             if (job.Status == EmailDispatchJobStatus.Cancelled) { continue; }
 
+            _logger.LogInformation("Worker starting to process job {JobId} with {Total} items", job.JobId, job.Total);
+            
             job.Status = EmailDispatchJobStatus.Running;
             _queue.UpdateJob(job);
 
