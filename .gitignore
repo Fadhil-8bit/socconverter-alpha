@@ -39,6 +39,7 @@ run.log
 
 # Bulk email sessions (outside webroot)
 Data/BulkEmailSessions/
+Data/Jobs/
 
 # Ignore SplitRoot directory
 wwwroot/SplitSessions/

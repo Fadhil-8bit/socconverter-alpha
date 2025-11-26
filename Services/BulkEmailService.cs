@@ -41,6 +41,8 @@ public class BulkEmailService : IBulkEmailService
 
         var attachmentsByDebtor = new Dictionary<string, List<AttachmentFile>>();
 
+        Console.WriteLine($"[BulkEmailService] Preparing bulk email for {sessionIds.Count} session(s) under root {_paths.BulkEmailRoot}");
+
         // Scan each session folder
         foreach (var sessionId in sessionIds)
         {
@@ -51,6 +53,8 @@ public class BulkEmailService : IBulkEmailService
 
             // Get all PDF files, excluding the "original" subfolder
             var pdfFiles = Directory.GetFiles(sessionPath, "*.pdf", SearchOption.TopDirectoryOnly);
+            Console.WriteLine($"[BulkEmailService] Session {sessionId}: found {pdfFiles.Length} PDF(s)");
+
             foreach (var filePath in pdfFiles)
             {
                 var fileName = Path.GetFileName(filePath);
@@ -89,6 +93,13 @@ public class BulkEmailService : IBulkEmailService
         foreach (var kvp in attachmentsByDebtor)
         {
             var prefill = _contacts.GetEmailForDebtor(kvp.Key) ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(prefill))
+            {
+                // auto-generate test email address pattern: debtor-<normalized-debtor-code>@example.com
+                var norm = kvp.Key.Trim().ToLowerInvariant().Replace(" ", "");
+                prefill = $"debtor-{norm}@example.com";
+            }
+
             bulkSession.DebtorGroups.Add(new DebtorEmailGroup
             {
                 DebtorCode = kvp.Key,
@@ -96,6 +107,8 @@ public class BulkEmailService : IBulkEmailService
                 EmailAddress = prefill
             });
         }
+
+        Console.WriteLine($"[BulkEmailService] Grouped into {attachmentsByDebtor.Count} debtor(s)");
 
         bulkSession.Status = BulkEmailStatus.Previewing;
 
@@ -126,6 +139,12 @@ public class BulkEmailService : IBulkEmailService
 
         session.Status = BulkEmailStatus.Sending;
         result.TotalAttempted = session.DebtorGroups.Count;
+
+        // Tracking for rate limiting
+        int sentThisMinute = 0;
+        int sentThisHour = 0;
+        DateTime currentMinute = DateTime.UtcNow;
+        DateTime currentHour = DateTime.UtcNow;
 
         // Send email to each debtor
         foreach (var group in session.DebtorGroups)
@@ -158,6 +177,33 @@ public class BulkEmailService : IBulkEmailService
                 var personalizedSubject = ReplacePlaceholders(subject, group, options.Placeholders);
                 var personalizedBody = ReplacePlaceholders(bodyTemplate, group, options.Placeholders);
 
+                // Rate limit windows refresh
+                var now = DateTime.UtcNow;
+                if ((now - currentMinute).TotalMinutes >= 1)
+                {
+                    currentMinute = now; sentThisMinute = 0;
+                }
+                if ((now - currentHour).TotalHours >= 1)
+                {
+                    currentHour = now; sentThisHour = 0;
+                }
+                // Enforce caps
+                if (options.MaxPerMinute > 0 && sentThisMinute >= options.MaxPerMinute)
+                {
+                    await Task.Delay( (int)Math.Max(options.DelayMs, 100)); // small wait until next minute
+                    currentMinute = DateTime.UtcNow; sentThisMinute = 0;
+                }
+                if (options.MaxPerHour > 0 && sentThisHour >= options.MaxPerHour)
+                {
+                    // Hard stop for hour cap
+                    result.FailedDebtorCodes.Add(group.DebtorCode);
+                    result.FailureDetails[group.DebtorCode] = "Hourly send cap reached.";
+                    continue;
+                }
+                // Inter-send delay
+                if (options.DelayMs > 0)
+                    await Task.Delay(options.DelayMs);
+
                 // Send email
                 await _emailSender.SendEmailWithAttachmentsAsync(
                     group.EmailAddress,
@@ -166,6 +212,9 @@ public class BulkEmailService : IBulkEmailService
                     emailAttachments,
                     options
                 );
+
+                // Track sent emails for rate limiting
+                sentThisMinute++; sentThisHour++;
 
                 result.SuccessCount++;
             }

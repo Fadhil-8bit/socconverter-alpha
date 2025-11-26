@@ -50,6 +50,21 @@ public class EmailOptions
     /// SMTP server settings (if using SMTP)
     /// </summary>
     public SmtpSettings? SmtpSettings { get; set; }
+
+    /// <summary>
+    /// Delay in milliseconds between individual sends
+    /// </summary>
+    public int DelayMs { get; set; } = 0;
+
+    /// <summary>
+    /// Maximum number of emails to send per minute (0 = unlimited)
+    /// </summary>
+    public int MaxPerMinute { get; set; } = 0;
+
+    /// <summary>
+    /// Maximum number of emails to send per hour (0 = unlimited)
+    /// </summary>
+    public int MaxPerHour { get; set; } = 0;
 }
 
 /// <summary>

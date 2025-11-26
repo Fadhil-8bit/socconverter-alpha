@@ -4,6 +4,7 @@ using socconvertor.Models;
 using socconvertor.Models.Home;
 using socconvertor.Helpers;
 using socconvertor.Services;
+using socconvertor.Models.Email;
 
 namespace socconvertor.Controllers;
 
@@ -11,11 +12,13 @@ public class HomeController : Controller
 {
     private readonly ILogger<HomeController> _logger;
     private readonly IStoragePaths _paths;
+    private readonly IBulkEmailDispatchQueue _dispatchQueue;
 
-    public HomeController(ILogger<HomeController> logger, IStoragePaths paths)
+    public HomeController(ILogger<HomeController> logger, IStoragePaths paths, IBulkEmailDispatchQueue dispatchQueue)
     {
         _logger = logger;
         _paths = paths;
+        _dispatchQueue = dispatchQueue;
     }
 
     public IActionResult Index()
@@ -76,6 +79,8 @@ public class HomeController : Controller
             .OrderByDescending(s => s.LastModifiedUtc)
             .Take(8)
             .ToList();
+
+        vm.Jobs = _dispatchQueue.GetAllJobs().OrderByDescending(j => j.CreatedUtc).Take(10).ToList();
 
         return View(vm);
     }

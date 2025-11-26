@@ -4,9 +4,12 @@ using Microsoft.AspNetCore.Http.Features;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Increase multipart limits for large ZIP uploads (e.g., up to 500MB total)
+// Increase form and multipart limits early to allow large debtor postings
 builder.Services.Configure<FormOptions>(o =>
 {
+    o.ValueCountLimit = 20000;               // default 1024; raise for large forms
+    o.ValueLengthLimit = int.MaxValue;       // max length per value
+    o.BufferBody = true;                     // buffer entire request body for large posts
     o.MultipartBodyLengthLimit = 500 * 1024 * 1024; // 500 MB
     o.MultipartHeadersLengthLimit = 128 * 1024;
 });
@@ -33,6 +36,10 @@ else
 builder.Services.AddSingleton<IBulkEmailService, BulkEmailService>();
 builder.Services.AddSingleton<IEmailSender, EmailSenderService>();
 
+// Queue and workers
+builder.Services.AddSingleton<IBulkEmailDispatchQueue, BulkEmailDispatchQueue>();
+builder.Services.AddHostedService<BulkEmailDispatchWorker>();
+
 // Add hosted services
 builder.Services.AddHostedService<BulkEmailRetentionService>();
 
@@ -44,6 +51,10 @@ if (!app.Environment.IsDevelopment())
     app.UseExceptionHandler("/Home/Error");
     // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
     app.UseHsts();
+}
+else
+{
+    app.UseDeveloperExceptionPage();
 }
 
 app.UseHttpsRedirection();

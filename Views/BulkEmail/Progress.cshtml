@@ -1,0 +1,105 @@
+@model socconvertor.Models.Email.EmailDispatchJob
+@{
+    ViewData["Title"] = "Bulk Send Progress";
+}
+<div class="container mt-3" id="progressApp">
+    <h2>Bulk Send Progress</h2>
+    <p class="text-muted">Job <code>@Model.JobId</code> created @Model.CreatedUtc.ToLocalTime().</p>
+
+    <div class="row g-3 mb-3">
+        <div class="col-md-2"><div class="card shadow-sm"><div class="card-body text-center"><h6>Total</h6><h4 id="totalVal">@Model.Total</h4></div></div></div>
+        <div class="col-md-2"><div class="card shadow-sm"><div class="card-body text-center"><h6>Sent</h6><h4 id="sentVal">@Model.SuccessCount</h4></div></div></div>
+        <div class="col-md-2"><div class="card shadow-sm"><div class="card-body text-center"><h6>Failed</h6><h4 id="failVal">@Model.FailedCount</h4></div></div></div>
+        <div class="col-md-2"><div class="card shadow-sm"><div class="card-body text-center"><h6>Deferred</h6><h4 id="defVal">@Model.DeferredCount</h4></div></div></div>
+        <div class="col-md-2"><div class="card shadow-sm"><div class="card-body text-center"><h6>Pending</h6><h4 id="pendVal">@Model.PendingCount</h4></div></div></div>
+        <div class="col-md-2"><div class="card shadow-sm"><div class="card-body text-center"><h6>Rate/min</h6><h4 id="rateVal">0</h4></div></div></div>
+    </div>
+
+    <div class="progress position-relative mb-3" style="height:30px;">
+        <div id="barSent" class="progress-bar bg-success" role="progressbar" style="width:0%"></div>
+        <div id="barFailed" class="progress-bar bg-danger" role="progressbar" style="width:0%"></div>
+        <div id="barDeferred" class="progress-bar bg-warning text-dark" role="progressbar" style="width:0%"></div>
+        <div id="barPending" class="progress-bar bg-secondary" role="progressbar" style="width:0%"></div>
+        <span id="barLabel" class="position-absolute top-50 start-50 translate-middle fw-bold"></span>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-header">Status</div>
+        <div class="card-body">
+            <p id="statusText">Status: @Model.Status</p>
+            <p id="resumeText" class="text-muted"></p>
+            <p id="etaText" class="text-muted"></p>
+            <p id="remainingText" class="text-muted"></p>
+            <p id="todayText" class="text-muted"></p>
+            <p id="tomorrowText" class="text-muted"></p>
+            <div class="d-flex gap-2 mt-2">
+                @if (Model.Status == socconvertor.Models.Email.EmailDispatchJobStatus.Queued || Model.Status == socconvertor.Models.Email.EmailDispatchJobStatus.Running || Model.Status == socconvertor.Models.Email.EmailDispatchJobStatus.PartiallyDeferred)
+                {
+                    <form method="post" asp-action="CancelJob" asp-controller="BulkEmail" onsubmit="return confirm('Cancel this job?');" class="d-inline">
+                        @Html.AntiForgeryToken()
+                        <input type="hidden" name="jobId" value="@Model.JobId" />
+                        <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-x-circle"></i> Cancel Job</button>
+                    </form>
+                }
+                @if (TempData["SuccessMessage"] != null)
+                {
+                    <span class="badge bg-success align-self-center">@TempData["SuccessMessage"]</span>
+                }
+            </div>
+        </div>
+    </div>
+
+    <a class="btn btn-secondary" href="@Url.Action("InitiateManual","BulkEmail")">Back to Sessions</a>
+</div>
+
+@section Scripts {
+<script>
+(function(){
+    const jobId='@Model.JobId';
+    const sentVal=el('sentVal'); const failVal=el('failVal'); const defVal=el('defVal'); const pendVal=el('pendVal'); const totalVal=el('totalVal');
+    const rateVal=el('rateVal'); const statusText=el('statusText'); const resumeText=el('resumeText'); const etaText=el('etaText'); const remainingText=el('remainingText');
+    const todayText=el('todayText'); const tomorrowText=el('tomorrowText');
+    const barSent=el('barSent'); const barFailed=el('barFailed'); const barDeferred=el('barDeferred'); const barPending=el('barPending'); const barLabel=el('barLabel');
+
+    function el(id){return document.getElementById(id);}    
+
+    async function poll(){
+        try{
+            const r=await fetch('@Url.Action("ProgressJson","BulkEmail")?jobId='+jobId);
+            const j=await r.json();
+            if(!j.ok){ statusText.textContent='Error: '+j.error; return; }
+            sentVal.textContent=j.sent; failVal.textContent=j.failed; defVal.textContent=j.deferred; pendVal.textContent=j.pending; totalVal.textContent=j.total;
+            rateVal.textContent=j.ratePerMinute;
+            statusText.textContent='Status: '+j.status;
+            if(j.nextResumeUtc){ resumeText.textContent='Next Resume (UTC): '+ j.nextResumeUtc; } else resumeText.textContent='';
+            if(j.etaMinutes){ etaText.textContent='Estimated completion in ~'+ j.etaMinutes +' minute(s).'; } else etaText.textContent='';
+            remainingText.textContent='Remaining: '+ j.remaining;
+
+            // Daily cap visibility
+            if (typeof j.maxPerDay !== 'undefined') {
+                const maxPerDay = j.maxPerDay;
+                const sentToday = j.sentToday;
+                const willSendToday = j.willSendToday;
+                const willSendTomorrow = j.willSendTomorrow;
+                todayText.textContent = `Today: sent ${sentToday} / ${maxPerDay > 0 ? maxPerDay : 'unlimited'} (will send ${willSendToday} more now)`;
+                tomorrowText.textContent = willSendTomorrow > 0 ? `Deferred to next run: ${willSendTomorrow} recipient(s)` : '';
+            }
+
+            const total = j.total || 1;
+            const pctSent = (j.sent/total)*100;
+            const pctFailed = (j.failed/total)*100;
+            const pctDeferred = (j.deferred/total)*100;
+            const pctPending = (j.pending/total)*100;
+            barSent.style.width=pctSent+'%';
+            barFailed.style.width=pctFailed+'%';
+            barDeferred.style.width=pctDeferred+'%';
+            barPending.style.width=pctPending+'%';
+            barLabel.textContent=Math.round((j.sent + j.failed + j.deferred)/total*100)+'%';
+            if(['Completed','Failed','Cancelled'].includes(j.status)) return;
+            setTimeout(poll,4000);
+        }catch(e){ statusText.textContent='Polling error: '+e.message; setTimeout(poll,6000); }
+    }
+    poll();
+})();
+</script>
+}

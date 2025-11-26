@@ -117,4 +117,69 @@
             }
         </div>
     </div>
+
+    <div class="card mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">Queued Email Jobs</h5>
+            <form method="post" asp-action="ClearJobs" asp-controller="BulkEmail" onsubmit="return confirm('Clear job history?');" class="d-inline">
+                @Html.AntiForgeryToken()
+                <input type="hidden" name="onlyFinished" value="true" />
+                <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i> Clear Finished</button>
+            </form>
+        </div>
+        <div class="card-body">
+            @if (!(Model.Jobs?.Any() ?? false))
+            {
+                <div class="text-muted">No queued or completed jobs.</div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover align-middle">
+                        <thead>
+                            <tr>
+                                <th>Job ID</th>
+                                <th>Status</th>
+                                <th>Created (Local)</th>
+                                <th>Sent</th>
+                                <th>Failed</th>
+                                <th>Deferred</th>
+                                <th>Pending</th>
+                                <th class="text-end">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var j in Model.Jobs)
+                            {
+                                <tr>
+                                    <td><code>@j.JobId</code></td>
+                                    <td>
+                                        <span class="badge @(j.Status == socconvertor.Models.Email.EmailDispatchJobStatus.Completed ? "bg-success" : j.Status == socconvertor.Models.Email.EmailDispatchJobStatus.Cancelled ? "bg-secondary" : j.Status == socconvertor.Models.Email.EmailDispatchJobStatus.Failed ? "bg-danger" : "bg-info")">@j.Status</span>
+                                    </td>
+                                    <td>@j.CreatedUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td>
+                                    <td>@j.SuccessCount</td>
+                                    <td>@j.FailedCount</td>
+                                    <td>@j.DeferredCount</td>
+                                    <td>@j.PendingCount</td>
+                                    <td class="text-end">
+                                        <div class="btn-group btn-group-sm" role="group">
+                                            <a class="btn btn-outline-primary" href="@Url.Action("Progress","BulkEmail", new { jobId = j.JobId })" title="View Progress"><i class="bi bi-bar-chart"></i></a>
+                                            @if (j.Status == socconvertor.Models.Email.EmailDispatchJobStatus.Queued || j.Status == socconvertor.Models.Email.EmailDispatchJobStatus.Running || j.Status == socconvertor.Models.Email.EmailDispatchJobStatus.PartiallyDeferred)
+                                            {
+                                                <form method="post" asp-action="CancelJob" asp-controller="BulkEmail" onsubmit="return confirm('Cancel job @j.JobId ?');" class="d-inline">
+                                                    @Html.AntiForgeryToken()
+                                                    <input type="hidden" name="jobId" value="@j.JobId" />
+                                                    <button type="submit" class="btn btn-outline-danger" title="Cancel"><i class="bi bi-x-circle"></i></button>
+                                                </form>
+                                            }
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </div>
 </div>

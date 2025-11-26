@@ -10,6 +10,7 @@ public class HomeDashboardViewModel
     public int BulkPdfCount { get; set; }
     public long TotalBytes { get; set; }
     public List<HomeSessionItem> RecentActivities { get; set; } = new();
+    public List<socconvertor.Models.Email.EmailDispatchJob> Jobs { get; set; } = new();
 
     public int TotalSessions => SplitSessionsCount + BulkSessionsCount;
     public int TotalPdfs => SplitPdfCount + BulkPdfCount;

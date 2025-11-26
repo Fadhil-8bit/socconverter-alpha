@@ -8,6 +8,7 @@ using System;
 using System.IO;
 using System.IO.Compression;
 using System.Text.RegularExpressions;
+using socconvertor.Models.Email;
 
 namespace socconvertor.Controllers;
 
@@ -17,17 +18,20 @@ public class BulkEmailController : Controller
     private readonly IConfiguration _configuration;
     private readonly ILogger<BulkEmailController> _logger;
     private readonly IStoragePaths _paths;
+    private readonly IBulkEmailDispatchQueue _dispatchQueue;
 
     public BulkEmailController(
         IBulkEmailService bulkEmailService,
         IConfiguration configuration,
         ILogger<BulkEmailController> logger,
-        IStoragePaths paths)
+        IStoragePaths paths,
+        IBulkEmailDispatchQueue dispatchQueue)
     {
         _bulkEmailService = bulkEmailService;
         _configuration = configuration;
         _logger = logger;
         _paths = paths;
+        _dispatchQueue = dispatchQueue;
     }
 
     private List<SessionInfo> GetSessionInfos()
@@ -132,9 +136,12 @@ public class BulkEmailController : Controller
         // Use only valid sessions for grouping
         model.SelectedSessionIds = validSessions;
 
+        _logger.LogInformation("Scan selected sessions: valid={ValidCount}, empty/missing={EmptyCount}. Valid IDs: {ValidIds}", validSessions.Count, emptySessions.Count, string.Join(",", validSessions));
+
         try
         {
             var bulkSession = await _bulkEmailService.PrepareBulkEmailAsync(model.SelectedSessionIds);
+            _logger.LogInformation("Prepared bulk session {SessionId}. Debtors={Debtors}, Files={Files}", bulkSession.SessionId, bulkSession.TotalDebtors, bulkSession.TotalFiles);
             if (bulkSession.TotalDebtors == 0)
             {
                 ModelState.AddModelError(string.Empty, "No debtor groups were produced from the selected sessions.");
@@ -147,6 +154,7 @@ public class BulkEmailController : Controller
         }
         catch (Exception ex)
         {
+            _logger.LogError(ex, "PrepareBulkEmailAsync failed for sessions: {ValidIds}", string.Join(",", validSessions));
             _logger.LogError(ex, "Error initiating manual bulk email with selected sessions");
             ModelState.AddModelError(string.Empty, $"Error preparing bulk email: {ex.Message}");
             var infos = GetSessionInfos();
@@ -176,6 +184,12 @@ public class BulkEmailController : Controller
         }
         ViewBag.BulkSessionId = session.SessionId;
         _logger.LogInformation("Preview loaded. Debtors: {DebtorCount}, Files: {FileCount}", session.TotalDebtors, session.TotalFiles);
+        _logger.LogInformation("Preview session {SessionId}: DebtorGroups={Debtors}, TotalFiles={Files}", session.SessionId, session.TotalDebtors, session.TotalFiles);
+        if (session.DebtorGroups == null || session.DebtorGroups.Count == 0)
+        {
+            TempData["ErrorMessage"] = "No debtor groups found. Ensure selected sessions have PDFs under BulkEmailRoot.";
+        }
+
         return View(session);
     }
 
@@ -212,6 +226,9 @@ public class BulkEmailController : Controller
                 FromName = _configuration["Email:FromName"] ?? "PDF Reader Demo",
                 IsHtml = true,
                 MaxAttachmentSizeMB = int.Parse(_configuration["Email:MaxAttachmentSizeMB"] ?? "10"),
+                DelayMs = int.Parse(_configuration["Email:RateLimit:DelayMs"] ?? "0"),
+                MaxPerMinute = int.Parse(_configuration["Email:RateLimit:MaxPerMinute"] ?? "0"),
+                MaxPerHour = int.Parse(_configuration["Email:RateLimit:MaxPerHour"] ?? "0"),
                 SmtpSettings = new SmtpSettings
                 {
                     Host = _configuration["Email:Smtp:Host"] ?? "smtp.gmail.com",
@@ -231,6 +248,128 @@ public class BulkEmailController : Controller
             TempData["ErrorMessage"] = $"Error sending emails: {ex.Message}";
             return RedirectToAction("Preview", new { sid = sessionId });
         }
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> StartQueuedSend(string sessionId, List<string>? debtorCodes, List<string>? emailAddresses, string? subject, string? bodyTemplate)
+    {
+        var session = await _bulkEmailService.GetSessionAsync(sessionId);
+        if (session == null)
+        {
+            TempData["ErrorMessage"] = "Session not found";
+            return RedirectToAction("InitiateManual");
+        }
+        debtorCodes ??= new List<string>();
+        emailAddresses ??= new List<string>();
+        var mappings = new Dictionary<string,string>();
+        for (int i=0;i<debtorCodes.Count && i<emailAddresses.Count;i++)
+            if (!string.IsNullOrWhiteSpace(debtorCodes[i]) && !string.IsNullOrWhiteSpace(emailAddresses[i]))
+                mappings[debtorCodes[i]] = emailAddresses[i];
+        if (mappings.Count>0) await _bulkEmailService.UpdateEmailAddressesAsync(sessionId, mappings);
+
+        // Build job from current session debtor groups
+        var job = _dispatchQueue.EnqueueFromSession(session);
+        job.SubjectTemplate = string.IsNullOrWhiteSpace(subject) ? job.SubjectTemplate : subject.Trim();
+        job.BodyTemplate = string.IsNullOrWhiteSpace(bodyTemplate) ? job.BodyTemplate : bodyTemplate.Trim();
+        _dispatchQueue.UpdateJob(job);
+
+        TempData["SuccessMessage"] = $"Queued job {job.JobId} with {job.Total} recipients.";
+        return RedirectToAction("Progress", new { jobId = job.JobId });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> StartQueuedSendAjax([FromBody] StartQueuedSendRequest req)
+    {
+        try
+        {
+            if (req == null || string.IsNullOrWhiteSpace(req.SessionId))
+                return BadRequest(new { ok = false, error = "sessionId missing" });
+
+            var session = await _bulkEmailService.GetSessionAsync(req.SessionId);
+            if (session == null)
+                return BadRequest(new { ok = false, error = "session not found" });
+
+            // Update mappings if provided
+            if (req.Mappings != null && req.Mappings.Count > 0)
+                await _bulkEmailService.UpdateEmailAddressesAsync(req.SessionId, req.Mappings);
+
+            // Create job from session
+            var job = _dispatchQueue.EnqueueFromSession(session);
+            job.SubjectTemplate = string.IsNullOrWhiteSpace(req.Subject) ? job.SubjectTemplate : req.Subject.Trim();
+            job.BodyTemplate = string.IsNullOrWhiteSpace(req.BodyTemplate) ? job.BodyTemplate : req.BodyTemplate.Trim();
+            _dispatchQueue.UpdateJob(job);
+
+            _logger.LogInformation("Queued job {JobId} for session {SessionId} with {ItemCount} items via JSON", job.JobId, req.SessionId, job.Total);
+            return Json(new { ok = true, jobId = job.JobId });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error in StartQueuedSendAjax for session {SessionId}", req?.SessionId);
+            return BadRequest(new { ok = false, error = ex.Message });
+        }
+    }
+
+    [HttpGet]
+    public IActionResult Progress(string jobId)
+    {
+        var job = _dispatchQueue.GetJob(jobId);
+        if (job == null) return NotFound();
+        return View(job);
+    }
+
+    [HttpGet]
+    public IActionResult ProgressJson(string jobId)
+    {
+        var job = _dispatchQueue.GetJob(jobId);
+        if (job == null) return Json(new { ok = false, error = "Job not found" });
+
+        var elapsedMinutes = (DateTime.UtcNow - job.CreatedUtc).TotalMinutes;
+        double rate = job.SuccessCount > 0 && elapsedMinutes > 0 ? job.SuccessCount / elapsedMinutes : 0;
+
+        int sent = job.SuccessCount;
+        int failed = job.FailedCount;
+        int deferred = job.DeferredCount;
+        int pending = job.PendingCount;
+        int total = job.Total;
+        int remaining = total - (sent + failed + deferred);
+
+        // Daily limit calculations
+        int maxPerDay = int.Parse(_configuration["Email:RateLimit:MaxPerDay"] ?? "0");
+        // Count items marked Sent today for this job
+        int sentToday = job.Items.Count(i => i.Status == EmailDispatchItemStatus.Sent
+                                             && i.LastAttemptUtc.HasValue
+                                             && i.LastAttemptUtc.Value.Date == DateTime.UtcNow.Date);
+
+        int allowedToday = maxPerDay > 0 ? Math.Max(0, maxPerDay - sentToday) : remaining;
+        int willSendToday = maxPerDay > 0 ? Math.Min(remaining, allowedToday) : remaining;
+        int willSendTomorrow = Math.Max(0, remaining - willSendToday);
+
+        double etaMinutes = rate > 0 ? remaining / rate : double.NaN;
+
+        return Json(new
+        {
+            ok = true,
+            id = job.JobId,
+            status = job.Status.ToString(),
+            total,
+            sent,
+            failed,
+            deferred,
+            pending,
+            nextResumeUtc = job.NextResumeUtc,
+            completedUtc = job.CompletedUtc,
+            ratePerMinute = Math.Round(rate, 2),
+            etaMinutes = double.IsNaN(etaMinutes) ? (double?)null : Math.Round(etaMinutes, 1),
+            remaining,
+            // Daily cap visibility
+            maxPerDay,
+            sentToday,
+            allowedToday,
+            willSendToday,
+            willSendTomorrow
+        });
     }
 
     [HttpGet]
@@ -429,5 +568,38 @@ public class BulkEmailController : Controller
             _logger.LogError(ex, "UploadZipsAjax error");
             return Json(new { ok = false, error = ex.Message });
         }
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public IActionResult CancelJob(string jobId)
+    {
+        if (string.IsNullOrWhiteSpace(jobId)) return RedirectToAction("InitiateManual");
+        _dispatchQueue.CancelJob(jobId);
+        TempData["SuccessMessage"] = $"Job {jobId} cancelled.";
+        return RedirectToAction("Progress", new { jobId });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public IActionResult ClearJobs(bool onlyFinished = true)
+    {
+        var removed = _dispatchQueue.ClearJobs(onlyFinished);
+        TempData["SuccessMessage"] = $"Removed {removed} job(s).";
+        return RedirectToAction("Index", "Home");
+    }
+
+    /// <summary>
+    /// Save debtor?email mappings via JSON to avoid large form field posts.
+    /// </summary>
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> SaveMappingsAjax([FromBody] Dictionary<string,string> mappings, string sessionId)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId)) return BadRequest(new { ok=false, error="sessionId missing" });
+        var session = await _bulkEmailService.GetSessionAsync(sessionId);
+        if (session == null) return BadRequest(new { ok=false, error="session not found" });
+        await _bulkEmailService.UpdateEmailAddressesAsync(sessionId, mappings);
+        return Json(new { ok=true, count=mappings.Count });
     }
 }
