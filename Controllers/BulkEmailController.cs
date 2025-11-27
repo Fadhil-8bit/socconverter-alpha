@@ -348,6 +348,12 @@ public class BulkEmailController : Controller
 
         double etaMinutes = rate > 0 ? remaining / rate : double.NaN;
 
+        // Get last error for diagnostics
+        var lastFailedItem = job.Items
+            .Where(i => i.Status == EmailDispatchItemStatus.Failed)
+            .OrderByDescending(i => i.LastAttemptUtc)
+            .FirstOrDefault();
+
         return Json(new
         {
             ok = true,
@@ -368,7 +374,12 @@ public class BulkEmailController : Controller
             sentToday,
             allowedToday,
             willSendToday,
-            willSendTomorrow
+            willSendTomorrow,
+            // Diagnostics
+            consecutiveFailures = job.ConsecutiveFailures,
+            failureReason = job.FailureReason,
+            lastError = lastFailedItem?.Error,
+            lastErrorTime = lastFailedItem?.LastAttemptUtc
         });
     }
 

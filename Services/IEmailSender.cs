@@ -1,4 +1,5 @@
 using socconvertor.Models.Email;
+using System.Threading;
 
 namespace socconvertor.Services;
 
@@ -10,7 +11,7 @@ public interface IEmailSender
     /// <summary>
     /// Sends a simple email without attachments
     /// </summary>
-    Task SendEmailAsync(string to, string subject, string body);
+    Task SendEmailAsync(string to, string subject, string body, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Sends an email with multiple attachments
@@ -20,10 +21,12 @@ public interface IEmailSender
     /// <param name="htmlBody">HTML body content</param>
     /// <param name="attachments">List of file attachments</param>
     /// <param name="options">Email options (from, reply-to, CC, etc.)</param>
+    /// <param name="cancellationToken">Cancellation token for aborting send/retries</param>
     Task SendEmailWithAttachmentsAsync(
         string to,
         string subject,
         string htmlBody,
         List<EmailAttachment> attachments,
-        EmailOptions options);
+        EmailOptions options,
+        CancellationToken cancellationToken = default);
 }

@@ -21,10 +21,10 @@ public class EmailSenderService : IEmailSender
         _logger = logger;
     }
 
-    public async Task SendEmailAsync(string to, string subject, string body)
+    public async Task SendEmailAsync(string to, string subject, string body, CancellationToken cancellationToken = default)
     {
         var options = GetDefaultEmailOptions();
-        await SendEmailWithAttachmentsAsync(to, subject, body, new List<EmailAttachment>(), options);
+        await SendEmailWithAttachmentsAsync(to, subject, body, new List<EmailAttachment>(), options, cancellationToken);
     }
 
     public async Task SendEmailWithAttachmentsAsync(
@@ -32,7 +32,8 @@ public class EmailSenderService : IEmailSender
         string subject,
         string htmlBody,
         List<EmailAttachment> attachments,
-        EmailOptions options)
+        EmailOptions options,
+        CancellationToken cancellationToken = default)
     {
         // Read retry configuration
         int maxAttempts = int.Parse(_configuration["Email:Retry:MaxAttempts"] ?? "3");
@@ -43,21 +44,29 @@ public class EmailSenderService : IEmailSender
 
         for (int attempt = 1; attempt <= maxAttempts; attempt++)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             try
             {
-                await SendEmailInternalAsync(to, subject, htmlBody, attachments, options);
-
+                await SendEmailInternalAsync(to, subject, htmlBody, attachments, options, cancellationToken);
+                
                 if (attempt > 1)
                 {
-                    _logger.LogInformation("Email sent successfully to {To} on attempt {Attempt}/{MaxAttempts}",
+                    _logger.LogInformation("Email sent successfully to {To} on attempt {Attempt}/{MaxAttempts}", 
                         to, attempt, maxAttempts);
                 }
                 else
                 {
-                    _logger.LogInformation("Email sent successfully to {To} with {AttachmentCount} attachments",
+                    _logger.LogInformation("Email sent successfully to {To} with {AttachmentCount} attachments", 
                         to, attachments.Count);
                 }
                 return; // Success
+            }
+            catch (OperationCanceledException)
+            {
+                _logger.LogWarning("Email send to {To} cancelled during attempt {Attempt}/{MaxAttempts}", 
+                    to, attempt, maxAttempts);
+                throw;
             }
             catch (Exception ex)
             {
@@ -73,15 +82,24 @@ public class EmailSenderService : IEmailSender
                 if (attempt < maxAttempts)
                 {
                     int delayMs = initialBackoffMs * (int)Math.Pow(backoffFactor, attempt - 1);
-                    _logger.LogWarning(ex,
-                        "Transient error sending email to {To} (attempt {Attempt}/{MaxAttempts}). Retrying after {DelayMs}ms...",
+                    _logger.LogWarning(ex, 
+                        "Transient error sending email to {To} (attempt {Attempt}/{MaxAttempts}). Retrying after {DelayMs}ms...", 
                         to, attempt, maxAttempts, delayMs);
-                    await Task.Delay(delayMs);
+                    
+                    try
+                    {
+                        await Task.Delay(delayMs, cancellationToken);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        _logger.LogWarning("Retry backoff cancelled for {To}", to);
+                        throw;
+                    }
                 }
                 else
                 {
-                    _logger.LogError(ex,
-                        "Failed to send email to {To} after {Attempts} attempts",
+                    _logger.LogError(ex, 
+                        "Failed to send email to {To} after {Attempts} attempts", 
                         to, maxAttempts);
                 }
             }
@@ -96,7 +114,8 @@ public class EmailSenderService : IEmailSender
         string subject,
         string htmlBody,
         List<EmailAttachment> attachments,
-        EmailOptions options)
+        EmailOptions options,
+        CancellationToken cancellationToken)
     {
         var message = new MimeMessage();
 
@@ -163,20 +182,21 @@ public class EmailSenderService : IEmailSender
         await client.ConnectAsync(
             smtpSettings.Host,
             smtpSettings.Port,
-            smtpSettings.EnableSsl ? SecureSocketOptions.StartTls : SecureSocketOptions.None
+            smtpSettings.EnableSsl ? SecureSocketOptions.StartTls : SecureSocketOptions.None,
+            cancellationToken
         );
 
         // Authenticate
         if (!string.IsNullOrEmpty(smtpSettings.Username))
         {
-            await client.AuthenticateAsync(smtpSettings.Username, smtpSettings.Password);
+            await client.AuthenticateAsync(smtpSettings.Username, smtpSettings.Password, cancellationToken);
         }
 
         // Send
-        await client.SendAsync(message);
+        await client.SendAsync(message, cancellationToken);
 
         // Disconnect
-        await client.DisconnectAsync(true);
+        await client.DisconnectAsync(true, cancellationToken);
     }
 
     /// <summary>

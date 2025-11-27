@@ -160,7 +160,8 @@ public class BulkEmailDispatchWorker : BackgroundService
                         subject,
                         body,
                         attachments,
-                        options
+                        options,
+                        ct
                     );
 
                     item.Status = EmailDispatchItemStatus.Sent;
@@ -181,16 +182,19 @@ public class BulkEmailDispatchWorker : BackgroundService
                     sentToday++;
                     processedInBatch++;
                     consecutiveFailures = 0;
+                    job.ConsecutiveFailures = 0;
                 }
                 else
                 {
                     consecutiveFailures++;
+                    job.ConsecutiveFailures = consecutiveFailures;
                     _logger.LogWarning("Job {JobId}: consecutive failures={Count}", job.JobId, consecutiveFailures);
 
                     if (failurePauseThreshold > 0 && consecutiveFailures >= failurePauseThreshold)
                     {
                         job.Status = EmailDispatchJobStatus.PartiallyDeferred;
                         job.NextResumeUtc = DateTime.UtcNow.AddMinutes(failurePauseMinutes);
+                        job.FailureReason = $"Auto-paused after {consecutiveFailures} consecutive failures";
                         _queue.UpdateJob(job);
                         _logger.LogWarning("Job {JobId} auto-paused for {Minutes} minutes after {Count} consecutive failures (likely SMTP host down)", job.JobId, failurePauseMinutes, consecutiveFailures);
                         break;

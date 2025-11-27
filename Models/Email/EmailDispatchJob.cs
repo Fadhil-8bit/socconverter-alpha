@@ -48,6 +48,7 @@ public class EmailDispatchJob
     public int Total => Items.Count;
     public string? FailureReason { get; set; }
     public DateTime? NextResumeUtc { get; set; }
+    public int ConsecutiveFailures { get; set; }
 
     public string SubjectTemplate { get; set; } = "Documents for {DebtorCode}";
     public string BodyTemplate { get; set; } = "Dear Customer,<br/>Please find attached {FileCount} document(s) for account {DebtorCode}.<br/>Total size: {TotalSize}<br/>Regards";
