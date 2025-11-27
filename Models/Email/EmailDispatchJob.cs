@@ -23,6 +23,7 @@ public class EmailDispatchItem
     public string? Error { get; set; }
     public DateTime? LastAttemptUtc { get; set; }
     public int AttemptCount { get; set; }
+    public bool IsWaitingForRateLimit { get; set; }
 }
 
 public enum EmailDispatchJobStatus

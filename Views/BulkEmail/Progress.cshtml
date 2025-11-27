@@ -34,8 +34,8 @@
             <p id="tomorrowText" class="text-muted"></p>
             <!-- diagnostics added -->
             <p id="failuresText" class="text-danger"></p>
+            <p id="liveStatusText" class="text-primary"></p>
             <p id="lastErrorText" class="text-muted" style="white-space:pre-wrap;"></p>
-            <p id="retryText" class="text-info"></p>
 
             <div id="pauseAlert" class="alert alert-warning d-none" role="alert">
                 <i class="bi bi-exclamation-triangle-fill"></i> <strong>Auto-paused:</strong> Job paused after consecutive send failures (likely SMTP host unreachable). Will auto-resume shortly.
@@ -96,7 +96,7 @@
     const sentVal=el('sentVal'); const failVal=el('failVal'); const defVal=el('defVal'); const pendVal=el('pendVal'); const totalVal=el('totalVal');
     const rateVal=el('rateVal'); const statusText=el('statusText'); const resumeText=el('resumeText'); const etaText=el('etaText'); const remainingText=el('remainingText');
     const todayText=el('todayText'); const tomorrowText=el('tomorrowText'); const pauseAlert=el('pauseAlert');
-    const failuresText=el('failuresText'); const lastErrorText=el('lastErrorText'); const retryText=el('retryText');
+    const failuresText=el('failuresText'); const lastErrorText=el('lastErrorText'); const liveStatusText=el('liveStatusText');
     const barSent=el('barSent'); const barFailed=el('barFailed'); const barDeferred=el('barDeferred'); const barPending=el('barPending'); const barLabel=el('barLabel');
 
     function el(id){return document.getElementById(id);}
@@ -218,6 +218,28 @@
                 failuresText.textContent = '';
             }
 
+            // Live status: show what's happening right now
+            const maxAttempts = j.maxAttempts || 3;
+            if (j.currentWaiting) {
+                liveStatusText.innerHTML = `<i class="bi bi-hourglass-split"></i> <strong>Waiting for rate limit...</strong> Next: ${escapeHtml(j.currentWaiting.debtorCode)} (${escapeHtml(j.currentWaiting.email)})`;
+                liveStatusText.className = 'text-info';
+            } else if (j.currentSending) {
+                const attempt = j.currentSending.attemptCount;
+                if (attempt === 1) {
+                    liveStatusText.innerHTML = `<i class="spinner-border spinner-border-sm"></i> <strong>Sending...</strong> ${escapeHtml(j.currentSending.debtorCode)} (${escapeHtml(j.currentSending.email)})`;
+                    liveStatusText.className = 'text-primary';
+                } else {
+                    liveStatusText.innerHTML = `<i class="spinner-border spinner-border-sm"></i> <strong>Retrying send...</strong> ${escapeHtml(j.currentSending.debtorCode)} (${escapeHtml(j.currentSending.email)}) — attempt ${attempt}/${maxAttempts}`;
+                    liveStatusText.className = 'text-warning';
+                }
+            } else if (j.status === 'Running' && j.remaining > 0) {
+                liveStatusText.innerHTML = '<i class="bi bi-arrow-repeat"></i> Processing...';
+                liveStatusText.className = 'text-secondary';
+            } else {
+                liveStatusText.textContent = '';
+            }
+
+            // Show last error separately (below live status)
             if (j.lastError) {
                 const err = escapeHtml(j.lastError);
                 const time = j.lastErrorTime ? ` (${new Date(j.lastErrorTime).toLocaleString()})` : '';
@@ -226,14 +248,6 @@
                 lastErrorText.textContent = j.failureReason;
             } else {
                 lastErrorText.textContent = '';
-            }
-
-            // Show retry status if system is currently retrying
-            if (j.currentRetry) {
-                const maxAttempts = 3; // from config Email:Retry:MaxAttempts
-                retryText.innerHTML = `<i class="spinner-border spinner-border-sm" role="status"></i> Retrying send to <strong>${escapeHtml(j.currentRetry.debtorCode)}</strong> (${escapeHtml(j.currentRetry.email)}) — attempt ${j.currentRetry.attemptCount}/${maxAttempts}`;
-            } else {
-                retryText.textContent = '';
             }
 
             lastFailedCount = j.failed;

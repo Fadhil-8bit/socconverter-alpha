@@ -113,11 +113,17 @@ public class BulkEmailDispatchWorker : BackgroundService
                 }
                 if (maxPerMinute > 0 && sentThisMinute >= maxPerMinute)
                 {
+                    // Mark item as waiting for rate limit
+                    item.IsWaitingForRateLimit = true;
+                    _queue.UpdateJob(job);
+                    
                     await Task.Delay(Math.Max(perItemDelayMs, 200), ct);
                     minuteWindow = DateTime.UtcNow; sentThisMinute = 0;
                 }
 
                 item.Status = EmailDispatchItemStatus.Sending;
+                item.IsWaitingForRateLimit = false;
+                item.AttemptCount = 0; // Reset attempt count at start of new send
                 item.LastAttemptUtc = DateTime.UtcNow;
                 _queue.UpdateJob(job);
 

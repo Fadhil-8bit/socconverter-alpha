@@ -354,11 +354,18 @@ public class BulkEmailController : Controller
             .OrderByDescending(i => i.LastAttemptUtc)
             .FirstOrDefault();
 
-        // Get currently attempting item (Sending status with attempt > 1 means retry in progress)
-        var retryingItem = job.Items
-            .Where(i => i.Status == EmailDispatchItemStatus.Sending && i.AttemptCount > 1)
+        // Get item waiting for rate limit
+        var waitingItem = job.Items
+            .FirstOrDefault(i => i.IsWaitingForRateLimit);
+
+        // Get currently sending/retrying item
+        var sendingItem = job.Items
+            .Where(i => i.Status == EmailDispatchItemStatus.Sending)
             .OrderByDescending(i => i.LastAttemptUtc)
             .FirstOrDefault();
+
+        // Read max attempts from config for display
+        int maxAttempts = int.Parse(_configuration["Email:Retry:MaxAttempts"] ?? "3");
 
         return Json(new
         {
@@ -386,12 +393,18 @@ public class BulkEmailController : Controller
             failureReason = job.FailureReason,
             lastError = lastFailedItem?.Error,
             lastErrorTime = lastFailedItem?.LastAttemptUtc,
-            // Retry visibility
-            currentRetry = retryingItem != null ? new
+            // Live status visibility
+            maxAttempts,
+            currentWaiting = waitingItem != null ? new
             {
-                debtorCode = retryingItem.DebtorCode,
-                email = retryingItem.EmailAddress,
-                attemptCount = retryingItem.AttemptCount
+                debtorCode = waitingItem.DebtorCode,
+                email = waitingItem.EmailAddress
+            } : null,
+            currentSending = sendingItem != null ? new
+            {
+                debtorCode = sendingItem.DebtorCode,
+                email = sendingItem.EmailAddress,
+                attemptCount = sendingItem.AttemptCount > 0 ? sendingItem.AttemptCount : 1
             } : null
         });
     }
