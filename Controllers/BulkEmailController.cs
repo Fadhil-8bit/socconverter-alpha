@@ -354,6 +354,12 @@ public class BulkEmailController : Controller
             .OrderByDescending(i => i.LastAttemptUtc)
             .FirstOrDefault();
 
+        // Get currently attempting item (Sending status with attempt > 1 means retry in progress)
+        var retryingItem = job.Items
+            .Where(i => i.Status == EmailDispatchItemStatus.Sending && i.AttemptCount > 1)
+            .OrderByDescending(i => i.LastAttemptUtc)
+            .FirstOrDefault();
+
         return Json(new
         {
             ok = true,
@@ -379,7 +385,14 @@ public class BulkEmailController : Controller
             consecutiveFailures = job.ConsecutiveFailures,
             failureReason = job.FailureReason,
             lastError = lastFailedItem?.Error,
-            lastErrorTime = lastFailedItem?.LastAttemptUtc
+            lastErrorTime = lastFailedItem?.LastAttemptUtc,
+            // Retry visibility
+            currentRetry = retryingItem != null ? new
+            {
+                debtorCode = retryingItem.DebtorCode,
+                email = retryingItem.EmailAddress,
+                attemptCount = retryingItem.AttemptCount
+            } : null
         });
     }
 
@@ -639,7 +652,8 @@ public class BulkEmailController : Controller
                 email = i.EmailAddress,
                 status = i.Status.ToString(),
                 lastAttemptUtc = i.LastAttemptUtc.HasValue ? i.LastAttemptUtc.Value.ToString("o") : null,
-                error = i.Error
+                error = i.Error,
+                attemptCount = i.AttemptCount
             })
             .ToList();
 

@@ -22,6 +22,7 @@ public class EmailDispatchItem
     public EmailDispatchItemStatus Status { get; set; } = EmailDispatchItemStatus.Pending;
     public string? Error { get; set; }
     public DateTime? LastAttemptUtc { get; set; }
+    public int AttemptCount { get; set; }
 }
 
 public enum EmailDispatchJobStatus

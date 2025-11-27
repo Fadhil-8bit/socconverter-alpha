@@ -130,6 +130,8 @@ public class BulkEmailDispatchWorker : BackgroundService
                         FromName = _config["Email:FromName"] ?? "PDF Reader Demo",
                         IsHtml = true,
                         MaxAttachmentSizeMB = int.Parse(_config["Email:MaxAttachmentSizeMB"] ?? "10"),
+                        JobId = job.JobId,
+                        DebtorCode = item.DebtorCode,
                         SmtpSettings = new SmtpSettings
                         {
                             Host = _config["Email:Smtp:Host"] ?? "localhost",

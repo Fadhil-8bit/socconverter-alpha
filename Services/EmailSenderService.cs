@@ -14,11 +14,13 @@ public class EmailSenderService : IEmailSender
 {
     private readonly IConfiguration _configuration;
     private readonly ILogger<EmailSenderService> _logger;
+    private readonly IBulkEmailDispatchQueue? _queue;
 
-    public EmailSenderService(IConfiguration configuration, ILogger<EmailSenderService> logger)
+    public EmailSenderService(IConfiguration configuration, ILogger<EmailSenderService> logger, IBulkEmailDispatchQueue? queue = null)
     {
         _configuration = configuration;
         _logger = logger;
+        _queue = queue;
     }
 
     public async Task SendEmailAsync(string to, string subject, string body, CancellationToken cancellationToken = default)
@@ -45,6 +47,22 @@ public class EmailSenderService : IEmailSender
         for (int attempt = 1; attempt <= maxAttempts; attempt++)
         {
             cancellationToken.ThrowIfCancellationRequested();
+
+            // Update attempt count in job item if queue is available
+            if (_queue != null && !string.IsNullOrEmpty(options.JobId) && !string.IsNullOrEmpty(options.DebtorCode))
+            {
+                var job = _queue.GetJob(options.JobId);
+                if (job != null)
+                {
+                    var item = job.Items.FirstOrDefault(i => i.DebtorCode == options.DebtorCode);
+                    if (item != null)
+                    {
+                        item.AttemptCount = attempt;
+                        item.LastAttemptUtc = DateTime.UtcNow;
+                        _queue.UpdateJob(job);
+                    }
+                }
+            }
 
             try
             {

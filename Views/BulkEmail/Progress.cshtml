@@ -32,6 +32,11 @@
             <p id="remainingText" class="text-muted"></p>
             <p id="todayText" class="text-muted"></p>
             <p id="tomorrowText" class="text-muted"></p>
+            <!-- diagnostics added -->
+            <p id="failuresText" class="text-danger"></p>
+            <p id="lastErrorText" class="text-muted" style="white-space:pre-wrap;"></p>
+            <p id="retryText" class="text-info"></p>
+
             <div id="pauseAlert" class="alert alert-warning d-none" role="alert">
                 <i class="bi bi-exclamation-triangle-fill"></i> <strong>Auto-paused:</strong> Job paused after consecutive send failures (likely SMTP host unreachable). Will auto-resume shortly.
             </div>
@@ -91,6 +96,7 @@
     const sentVal=el('sentVal'); const failVal=el('failVal'); const defVal=el('defVal'); const pendVal=el('pendVal'); const totalVal=el('totalVal');
     const rateVal=el('rateVal'); const statusText=el('statusText'); const resumeText=el('resumeText'); const etaText=el('etaText'); const remainingText=el('remainingText');
     const todayText=el('todayText'); const tomorrowText=el('tomorrowText'); const pauseAlert=el('pauseAlert');
+    const failuresText=el('failuresText'); const lastErrorText=el('lastErrorText'); const retryText=el('retryText');
     const barSent=el('barSent'); const barFailed=el('barFailed'); const barDeferred=el('barDeferred'); const barPending=el('barPending'); const barLabel=el('barLabel');
 
     function el(id){return document.getElementById(id);}
@@ -118,15 +124,16 @@
 
         const totalPages = Math.ceil(total / pageSize);
 
-        let html = '<div class="table-responsive"><table class="table table-sm table-hover align-middle"><thead><tr><th>Debtor Code</th><th>Email</th><th>Status</th><th>Last Attempt</th><th>Error</th></tr></thead><tbody>';
+        let html = '<div class="table-responsive"><table class="table table-sm table-hover align-middle"><thead><tr><th>Debtor Code</th><th>Email</th><th>Status</th><th>Attempts</th><th>Last Attempt</th><th>Error</th></tr></thead><tbody>';
         
         if (items.length === 0) {
-            html += '<tr><td colspan="5" class="text-muted text-center">No items</td></tr>';
+            html += '<tr><td colspan="6" class="text-muted text-center">No items</td></tr>';
         } else {
             for (const item of items) {
                 const lastAttempt = item.lastAttemptUtc ? new Date(item.lastAttemptUtc).toLocaleString() : '-';
                 const error = item.error ? `<small class="text-danger">${escapeHtml(item.error.substring(0, 100))}</small>` : '-';
-                html += `<tr><td><strong>${escapeHtml(item.debtorCode)}</strong></td><td>${escapeHtml(item.email)}</td><td><span class="badge bg-${statusBadge(item.status)}">${item.status}</span></td><td><small>${lastAttempt}</small></td><td>${error}</td></tr>`;
+                const attempts = item.attemptCount > 0 ? item.attemptCount : '-';
+                html += `<tr><td><strong>${escapeHtml(item.debtorCode)}</strong></td><td>${escapeHtml(item.email)}</td><td><span class="badge bg-${statusBadge(item.status)}">${item.status}</span></td><td>${attempts}</td><td><small>${lastAttempt}</small></td><td>${error}</td></tr>`;
             }
         }
         html += '</tbody></table></div>';
@@ -201,6 +208,32 @@
             } else {
                 pauseAlert.classList.add('d-none');
                 resumeText.textContent = j.nextResumeUtc ? 'Next Resume (UTC): '+ j.nextResumeUtc : '';
+            }
+
+            // diagnostics - show retry status and error details if available
+            // Diagnostics: show consecutive failures and last error directly on page
+            if (typeof j.consecutiveFailures !== 'undefined' && j.consecutiveFailures > 0) {
+                failuresText.textContent = `Consecutive failures: ${j.consecutiveFailures}`;
+            } else {
+                failuresText.textContent = '';
+            }
+
+            if (j.lastError) {
+                const err = escapeHtml(j.lastError);
+                const time = j.lastErrorTime ? ` (${new Date(j.lastErrorTime).toLocaleString()})` : '';
+                lastErrorText.innerHTML = `<strong>Last error:</strong> ${err}${time}`;
+            } else if (j.failureReason) {
+                lastErrorText.textContent = j.failureReason;
+            } else {
+                lastErrorText.textContent = '';
+            }
+
+            // Show retry status if system is currently retrying
+            if (j.currentRetry) {
+                const maxAttempts = 3; // from config Email:Retry:MaxAttempts
+                retryText.innerHTML = `<i class="spinner-border spinner-border-sm" role="status"></i> Retrying send to <strong>${escapeHtml(j.currentRetry.debtorCode)}</strong> (${escapeHtml(j.currentRetry.email)}) — attempt ${j.currentRetry.attemptCount}/${maxAttempts}`;
+            } else {
+                retryText.textContent = '';
             }
 
             lastFailedCount = j.failed;

@@ -65,6 +65,16 @@ public class EmailOptions
     /// Maximum number of emails to send per hour (0 = unlimited)
     /// </summary>
     public int MaxPerHour { get; set; } = 0;
+
+    /// <summary>
+    /// Job ID for correlation during retries
+    /// </summary>
+    public string? JobId { get; set; }
+
+    /// <summary>
+    /// Debtor code for correlation during retries
+    /// </summary>
+    public string? DebtorCode { get; set; }
 }
 
 /// <summary>
