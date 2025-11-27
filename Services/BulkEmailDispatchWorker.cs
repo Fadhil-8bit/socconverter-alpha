@@ -182,6 +182,9 @@ public class BulkEmailDispatchWorker : BackgroundService
                     _logger.LogError(ex, "Failed to send email to {DebtorCode} ({Email})", item.DebtorCode, item.EmailAddress);
                 }
 
+                // Persist status immediately after send completes
+                _queue.UpdateJob(job);
+
                 // Increment counters only for successful sends
                 if (item.Status == EmailDispatchItemStatus.Sent)
                 {
@@ -222,8 +225,6 @@ public class BulkEmailDispatchWorker : BackgroundService
                 {
                     await Task.Delay(perItemDelayMs, ct);
                 }
-
-                _queue.UpdateJob(job);
             }
 
             if (job.PendingCount == 0 && job.DeferredCount == 0)
