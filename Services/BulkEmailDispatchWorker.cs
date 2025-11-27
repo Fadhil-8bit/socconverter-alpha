@@ -123,7 +123,7 @@ public class BulkEmailDispatchWorker : BackgroundService
 
                 item.Status = EmailDispatchItemStatus.Sending;
                 item.IsWaitingForRateLimit = false;
-                item.AttemptCount = 0; // Reset attempt count at start of new send
+                item.AttemptCount = 1; // Set to 1 at start of send (EmailSenderService may increment further for retries)
                 item.LastAttemptUtc = DateTime.UtcNow;
                 _queue.UpdateJob(job);
 

@@ -404,7 +404,7 @@ public class BulkEmailController : Controller
             {
                 debtorCode = sendingItem.DebtorCode,
                 email = sendingItem.EmailAddress,
-                attemptCount = sendingItem.AttemptCount > 0 ? sendingItem.AttemptCount : 1
+                attemptCount = sendingItem.AttemptCount >= 1 ? sendingItem.AttemptCount : 1
             } : null
         });
     }
