@@ -219,7 +219,7 @@
             }
 
             // Live status: show what's happening right now
-            const maxAttempts = j.maxAttempts || 3;
+            const maxAttemptsFromJson = j.maxAttempts || 3;
             if (j.currentWaiting) {
                 liveStatusText.innerHTML = `<i class="bi bi-hourglass-split"></i> <strong>Waiting for rate limit...</strong> Next: ${escapeHtml(j.currentWaiting.debtorCode)} (${escapeHtml(j.currentWaiting.email)})`;
                 liveStatusText.className = 'text-info';
@@ -229,8 +229,21 @@
                     liveStatusText.innerHTML = `<i class="spinner-border spinner-border-sm"></i> <strong>Sending...</strong> ${escapeHtml(j.currentSending.debtorCode)} (${escapeHtml(j.currentSending.email)})`;
                     liveStatusText.className = 'text-primary';
                 } else {
-                    liveStatusText.innerHTML = `<i class="spinner-border spinner-border-sm"></i> <strong>Retrying send...</strong> ${escapeHtml(j.currentSending.debtorCode)} (${escapeHtml(j.currentSending.email)}) — attempt ${attempt}/${maxAttempts}`;
+                    liveStatusText.innerHTML = `<i class="spinner-border spinner-border-sm"></i> <strong>Retrying send...</strong> ${escapeHtml(j.currentSending.debtorCode)} (${escapeHtml(j.currentSending.email)}) — attempt ${attempt}/${maxAttemptsFromJson}`;
                     liveStatusText.className = 'text-warning';
+                }
+            } else if (j.recentActivity) {
+                // Recent activity within configured window
+                const ra = j.recentActivity;
+                if (ra.status === 'Sent') {
+                    liveStatusText.innerHTML = `<i class="bi bi-check-circle"></i> Just sent ${escapeHtml(ra.debtorCode)} (${escapeHtml(ra.email)})`;
+                    liveStatusText.className = 'text-success';
+                } else if (ra.status === 'Failed') {
+                    liveStatusText.innerHTML = `<i class="bi bi-exclamation-circle"></i> Recent failure: ${escapeHtml(ra.debtorCode)} (${escapeHtml(ra.email)})`;
+                    liveStatusText.className = 'text-danger';
+                } else {
+                    liveStatusText.innerHTML = `<i class="bi bi-info-circle"></i> Recent activity: ${escapeHtml(ra.debtorCode)} (${escapeHtml(ra.email)})`;
+                    liveStatusText.className = 'text-secondary';
                 }
             } else if (j.status === 'Running' && j.remaining > 0) {
                 liveStatusText.innerHTML = '<i class="bi bi-arrow-repeat"></i> Processing...';

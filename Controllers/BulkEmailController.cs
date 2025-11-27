@@ -367,6 +367,26 @@ public class BulkEmailController : Controller
         // Read max attempts from config for display
         int maxAttempts = int.Parse(_configuration["Email:Retry:MaxAttempts"] ?? "3");
 
+        // Recent activity window (seconds) - configurable
+        int recentWindowSec = int.Parse(_configuration["Email:StatusRecentWindowSeconds"] ?? "5");
+        var recentItem = job.Items
+            .Where(i => i.LastAttemptUtc.HasValue)
+            .OrderByDescending(i => i.LastAttemptUtc)
+            .FirstOrDefault();
+
+        object? recentActivity = null;
+        if (recentItem != null && (DateTime.UtcNow - recentItem.LastAttemptUtc.Value).TotalSeconds <= recentWindowSec)
+        {
+            recentActivity = new
+            {
+                debtorCode = recentItem.DebtorCode,
+                email = recentItem.EmailAddress,
+                status = recentItem.Status.ToString(),
+                attemptCount = recentItem.AttemptCount,
+                lastAttemptUtc = recentItem.LastAttemptUtc
+            };
+        }
+
         return Json(new
         {
             ok = true,
@@ -405,7 +425,8 @@ public class BulkEmailController : Controller
                 debtorCode = sendingItem.DebtorCode,
                 email = sendingItem.EmailAddress,
                 attemptCount = sendingItem.AttemptCount >= 1 ? sendingItem.AttemptCount : 1
-            } : null
+            } : null,
+            recentActivity
         });
     }
 
