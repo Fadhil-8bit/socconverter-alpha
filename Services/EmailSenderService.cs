@@ -48,8 +48,9 @@ public class EmailSenderService : IEmailSender
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            // Update attempt count in job item if queue is available
-            if (_queue != null && !string.IsNullOrEmpty(options.JobId) && !string.IsNullOrEmpty(options.DebtorCode))
+            // Update attempt count in job item for retries (attempt 2+)
+            // First attempt (1) is already set by the worker
+            if (attempt > 1 && _queue != null && !string.IsNullOrEmpty(options.JobId) && !string.IsNullOrEmpty(options.DebtorCode))
             {
                 var job = _queue.GetJob(options.JobId);
                 if (job != null)
