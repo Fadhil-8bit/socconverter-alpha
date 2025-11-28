@@ -9,9 +9,16 @@ builder.Services.Configure<FormOptions>(o =>
 {
     o.ValueCountLimit = 20000;               // default 1024; raise for large forms
     o.ValueLengthLimit = int.MaxValue;       // max length per value
-    o.BufferBody = true;                     // buffer entire request body for large posts
+    o.BufferBody = false;                    // avoid buffering entire request body for large uploads
     o.MultipartBodyLengthLimit = 500 * 1024 * 1024; // 500 MB
     o.MultipartHeadersLengthLimit = 128 * 1024;
+});
+
+// Also ensure Kestrel doesn't enforce a smaller limit at the server layer
+builder.WebHost.UseKestrel(o =>
+{
+    // Allow unlimited request body size at Kestrel level for large uploads (Nullable<long>)
+    o.Limits.MaxRequestBodySize = null;
 });
 
 // Add services to the container.

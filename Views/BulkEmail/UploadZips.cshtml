@@ -14,7 +14,7 @@
     <h2>Create Session from ZIPs</h2>
     <p class="text-muted">Drag & drop one or more ZIP files (SOA / INV / OD) or use the picker. Non-PDF entries skipped.</p>
 
-    <div id="alerts"></div>
+    <div id="alerts" aria-live="polite"></div>
 
     <form id="zipForm" enctype="multipart/form-data" class="mb-3">
         @Html.AntiForgeryToken()
@@ -28,16 +28,17 @@
                     <p class="m-0"><strong>Drag & Drop ZIP files here</strong></p>
                     <p class="small text-muted mb-2">or click to select</p>
                     <input type="file" id="fileInput" name="files" accept=".zip" multiple hidden />
-                    <button type="button" class="btn btn-sm btn-outline-secondary" id="chooseBtn">Choose Files</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="chooseBtn">Add ZIPs</button>
+                    <span id="countBadge" class="badge bg-secondary ms-2">0 selected</span>
                 </div>
             </div>
         </div>
 
-        <div class="mt-3" id="fileList" class="small"></div>
+        <div class="mt-3 small" id="fileList"></div>
 
         <div class="mt-3 d-flex align-items-center gap-3">
             <button type="submit" class="btn btn-primary" id="uploadBtn" disabled>Upload & Create Session</button>
-            <button type="button" class="btn btn-secondary" id="resetBtn">Reset</button>
+            <button type="button" class="btn btn-secondary" id="resetBtn">Clear All</button>
             <a class="btn btn-outline-primary ms-auto" href="@Url.Action("InitiateManual", "BulkEmail")">Back to Sessions</a>
         </div>
     </form>
@@ -83,8 +84,10 @@
     const countsDiv = document.getElementById('counts');
     const uploadMore = document.getElementById('uploadMore');
     const alerts = document.getElementById('alerts');
+    const countBadge = document.getElementById('countBadge');
 
     let files = [];
+    let pickerOpen = false; // guard to prevent double-open
 
     function showAlert(type, msg){
         const e = document.createElement('div');
@@ -95,25 +98,48 @@
     function clearAlerts(){ alerts.innerHTML=''; }
 
     function renderFiles(){
+        countBadge.textContent = `${files.length} selected`;
         if(files.length===0){ fileList.innerHTML='<div class="text-muted">No files selected.</div>'; uploadBtn.disabled=true; return; }
-        const list = files.map(f=>`<div>${f.name} <span class='text-muted'>(${(f.size/1024).toFixed(1)} KB)</span></div>`).join('');
+        const list = files.map((f,idx)=>
+            `<div class="d-flex justify-content-between align-items-center py-1 border-bottom">
+                <span>${f.name} <span class='text-muted'>(${(f.size/1024).toFixed(1)} KB)</span></span>
+                <button type="button" class="btn btn-sm btn-outline-danger" data-idx="${idx}">Remove</button>
+            </div>`
+        ).join('');
         fileList.innerHTML = list;
+        fileList.querySelectorAll('[data-idx]').forEach(btn => {
+            btn.addEventListener('click', () => { files.splice(+btn.dataset.idx,1); renderFiles(); });
+        });
         uploadBtn.disabled=false;
     }
 
     function addFiles(flist){
-        for(const f of flist){ if(f.type!=="application/x-zip-compressed" && !f.name.toLowerCase().endsWith('.zip')) continue; files.push(f); }
+        let added = 0, skipped = 0;
+        for(const f of flist){
+            const isZipByName = f.name && f.name.toLowerCase().endsWith('.zip');
+            const isZipByType = f.type && f.type.toLowerCase().includes('zip');
+            if (!isZipByName && !isZipByType) { skipped++; continue; }
+            // de-duplicate by name+size
+            if (files.some(x => x.name === f.name && x.size === f.size)) continue;
+            files.push(f); added++;
+        }
+        if (skipped>0) showAlert('info', `${skipped} file(s) skipped (not ZIP).`);
+        if (added===0 && flist.length>0) showAlert('info', 'No new files added.');
         renderFiles();
     }
 
-    dropZone.addEventListener('click',()=>fileInput.click());
-    chooseBtn.addEventListener('click',()=>fileInput.click());
-    fileInput.addEventListener('change',e=>{ addFiles(e.target.files); fileInput.value=''; });
+    chooseBtn.addEventListener('click',()=>{
+        if (pickerOpen) return;
+        pickerOpen = true;
+        fileInput.click();
+    });
+    fileInput.addEventListener('change',e=>{ addFiles(e.target.files); pickerOpen = false; });
+    fileInput.addEventListener('blur', ()=>{ pickerOpen = false; });
 
-    dropZone.addEventListener('dragover',e=>{ e.preventDefault(); dropZone.classList.add('border-primary'); });
-    dropZone.addEventListener('dragleave',()=> dropZone.classList.remove('border-primary'));
+    dropZone.addEventListener('dragover',e=>{ e.preventDefault(); dropZone.classList.add('border-primary'); dropZone.classList.add('bg-white'); });
+    dropZone.addEventListener('dragleave',()=> { dropZone.classList.remove('border-primary'); dropZone.classList.remove('bg-white'); });
     dropZone.addEventListener('drop',e=>{
-        e.preventDefault(); dropZone.classList.remove('border-primary');
+        e.preventDefault(); dropZone.classList.remove('border-primary'); dropZone.classList.remove('bg-white');
         addFiles(e.dataTransfer.files);
     });
 
@@ -129,31 +155,44 @@
 
         const fd = new FormData();
         fd.append('customCode', code);
-        const anti = form.querySelector('input[name="__RequestVerificationToken"]').value;
-        fd.append('__RequestVerificationToken', anti);
-        // Map first three files to soa/invoice/od
-        fd.append('soaZip', files[0]);
-        if(files[1]) fd.append('invoiceZip', files[1]);
-        if(files[2]) fd.append('odZip', files[2]);
+        const antiInput = form.querySelector('input[name="__RequestVerificationToken"]');
+        if (antiInput && antiInput.value) fd.append('__RequestVerificationToken', antiInput.value);
+        // Send all ZIPs; server now accepts any number of files
+        for (const f of files) fd.append('files', f);
 
         progressWrap.classList.remove('d-none');
         progressBar.style.width='5%'; progressBar.textContent='Starting...';
 
         try{
-            const resp = await fetch('@Url.Action("UploadZipsAjax","BulkEmail")', { method:'POST', body: fd });
+            const resp = await fetch('@Url.Action("UploadZipsAjax","BulkEmail")', { method:'POST', body: fd, credentials: 'same-origin' });
             progressBar.style.width='60%'; progressBar.textContent='Processing...';
-            const json = await resp.json();
+
+            const ct = resp.headers.get('content-type') || '';
+            let json = null, text = null;
+            if (ct.includes('application/json')) {
+                json = await resp.json();
+            } else {
+                text = await resp.text();
+                if (!resp.ok) throw new Error(text || `HTTP ${resp.status} ${resp.statusText}`);
+                try { json = JSON.parse(text); } catch { throw new Error('Expected JSON response but server returned non-JSON content.'); }
+            }
+
             progressBar.style.width='100%'; progressBar.textContent='Done';
             setTimeout(()=>progressWrap.classList.add('d-none'),800);
-            if(!json.ok){ showAlert('danger', json.error || 'Upload failed.'); return; }
+
+            if(!json || !json.ok){ showAlert('danger', (json && json.error) || 'Upload failed.'); return; }
             summary.classList.remove('d-none');
             summaryText.textContent = `Session ${json.sessionId} created with ${json.total} PDF(s).`;
             countsDiv.innerHTML = `<span class='badge bg-info text-dark me-1'>SOA: ${json.soa}</span>`+
                                   `<span class='badge bg-success me-1'>INV: ${json.inv}</span>`+
                                   `<span class='badge bg-warning text-dark me-1'>OD: ${json.od}</span>`+
-                                  `<span class='badge bg-secondary'>UNK: ${json.unk}</span>`;
+                                  `<span class='badge bg-secondary'>Other: ${json.unk}</span>`;
             window.scrollTo({ top: summary.offsetTop - 40, behavior: 'smooth'});
-        }catch(err){ showAlert('danger', err.message); }
+        }catch(err){
+            progressBar.style.width='0%'; progressBar.textContent='0%';
+            setTimeout(()=>progressWrap.classList.add('d-none'),200);
+            showAlert('danger', err.message || 'Upload failed');
+        }
     });
 
     renderFiles();

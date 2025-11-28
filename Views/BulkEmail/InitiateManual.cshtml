@@ -14,7 +14,7 @@
     <h2>Select Session Folders</h2>
     <p class="text-muted">Select one or more bulk (ZIP) session folders to group and send by email.</p>
     <p class="text-muted">Found <strong>@(Model.Sessions?.Count ?? 0)</strong> session(s).</p>
-    <p class="small text-muted">Files without SOA / INV / OD tokens are counted as <span class="badge bg-secondary">UNKNOWN</span>.</p>
+    <p class="small text-muted">Files without SOA / INV / OD tokens are counted as <span class="badge bg-secondary">OTHER</span>.</p>
 
     @if (TempData["ErrorMessage"] != null)
     {
@@ -87,7 +87,7 @@
                                         <span class="badge bg-info text-dark me-1">SOA: @s.SoaCount</span>
                                         <span class="badge bg-success me-1">INV: @s.InvoiceCount</span>
                                         <span class="badge bg-warning text-dark me-1">OD: @s.OverdueCount</span>
-                                        <span class="badge bg-secondary text-light">UNK: @s.UnknownCount</span>
+                                        <span class="badge bg-secondary text-light">OTHER: @s.UnknownCount</span>
                                     </div>
                                     <div class="d-flex flex-wrap gap-2">
                                         <button type="submit"

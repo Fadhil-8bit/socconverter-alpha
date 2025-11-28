@@ -20,6 +20,18 @@ public class BulkEmailController : Controller
     private readonly IStoragePaths _paths;
     private readonly IBulkEmailDispatchQueue _dispatchQueue;
 
+    private static DocumentCategory DetectCategory(string fileName)
+    {
+        // Normalize and match tokens with word boundaries to avoid false positives
+        var upper = fileName.ToUpperInvariant();
+        if (Regex.IsMatch(upper, @"\bSOA\b")) return DocumentCategory.Soa;
+        if (Regex.IsMatch(upper, @"\bINV(OICE)?\b")) return DocumentCategory.Inv;
+        if (Regex.IsMatch(upper, @"\bOD\b|\bOVERDUE\b")) return DocumentCategory.Od;
+        return DocumentCategory.Other;
+    }
+
+    private enum DocumentCategory { Soa, Inv, Od, Other }
+
     public BulkEmailController(
         IBulkEmailService bulkEmailService,
         IConfiguration configuration,
@@ -45,15 +57,18 @@ public class BulkEmailController : Controller
             if (string.IsNullOrEmpty(id)) continue;
             var pdfs = Directory.GetFiles(dir, "*.pdf", SearchOption.TopDirectoryOnly);
             var totalBytes = pdfs.Sum(f => new FileInfo(f).Length);
-            int soa = 0, inv = 0, od = 0, unk = 0;
+            int soa = 0, inv = 0, od = 0, other = 0;
             DateTime last = pdfs.Length > 0 ? pdfs.Select(f => System.IO.File.GetLastWriteTimeUtc(f)).Max() : Directory.GetLastWriteTimeUtc(dir);
             foreach (var f in pdfs)
             {
-                var upper = Path.GetFileName(f).ToUpperInvariant();
-                if (upper.Contains(" SOA ") || upper.Contains("_SOA_")) soa++;
-                else if (upper.Contains(" OD ") || upper.Contains("_OD_") || upper.Contains("OVERDUE")) od++;
-                else if (upper.Contains(" INV ") || upper.Contains("_INV_") || upper.Contains("INVOICE")) inv++;
-                else unk++;
+                var name = Path.GetFileName(f);
+                switch (DetectCategory(name))
+                {
+                    case DocumentCategory.Soa: soa++; break;
+                    case DocumentCategory.Inv: inv++; break;
+                    case DocumentCategory.Od: od++; break;
+                    default: other++; break;
+                }
             }
             list.Add(new SessionInfo
             {
@@ -64,7 +79,7 @@ public class BulkEmailController : Controller
                 SoaCount = soa,
                 InvoiceCount = inv,
                 OverdueCount = od,
-                UnknownCount = unk,
+                UnknownCount = other,
                 Origin = "zip"
             });
         }
@@ -434,26 +449,23 @@ public class BulkEmailController : Controller
     public IActionResult UploadZips() => View();
 
     [HttpPost]
-    [ValidateAntiForgeryToken]
+    [IgnoreAntiforgeryToken]
     [DisableRequestSizeLimit]
     public async Task<IActionResult> UploadZips(IFormFile? soaZip, IFormFile? invoiceZip, IFormFile? odZip, string? customCode)
     {
-        var formFiles = Request?.Form?.Files;
-        if ((soaZip == null || soaZip.Length == 0) && formFiles?.Any(f => f.Name == "soaZip") == true)
-            soaZip = formFiles!.First(f => f.Name == "soaZip");
-        if ((invoiceZip == null || invoiceZip.Length == 0) && formFiles?.Any(f => f.Name == "invoiceZip") == true)
-            invoiceZip = formFiles!.First(f => f.Name == "invoiceZip");
-        if ((odZip == null || odZip.Length == 0) && formFiles?.Any(f => f.Name == "odZip") == true)
-            odZip = formFiles!.First(f => f.Name == "odZip");
+        // Switch to multi-zip: accept any number of ZIPs from the form under any key
+        var form = await Request.ReadFormAsync();
+        var files = form.Files;
 
-        if ((soaZip == null || soaZip.Length == 0) && (invoiceZip == null || invoiceZip.Length == 0) && (odZip == null || odZip.Length == 0))
-        {
-            TempData["ErrorMessage"] = "Please upload at least one ZIP file.";
-            return RedirectToAction("UploadZips");
-        }
         if (!string.IsNullOrEmpty(customCode) && !Regex.IsMatch(customCode, "^\\d{4,8}$"))
         {
             TempData["ErrorMessage"] = "Custom code must be 4–8 digits.";
+            return RedirectToAction("UploadZips");
+        }
+
+        if (files == null || files.Count == 0)
+        {
+            TempData["ErrorMessage"] = "Please upload at least one ZIP file.";
             return RedirectToAction("UploadZips");
         }
 
@@ -468,9 +480,14 @@ public class BulkEmailController : Controller
         int totalExtracted = 0;
         try
         {
-            if (soaZip is { Length: > 0 }) totalExtracted += await ExtractPdfEntriesFromZipAsync(soaZip, sessionPath);
-            if (invoiceZip is { Length: > 0 }) totalExtracted += await ExtractPdfEntriesFromZipAsync(invoiceZip, sessionPath);
-            if (odZip is { Length: > 0 }) totalExtracted += await ExtractPdfEntriesFromZipAsync(odZip, sessionPath);
+            foreach (var f in files)
+            {
+                // Only process ZIP files by extension or content type
+                var nameIsZip = !string.IsNullOrEmpty(f.FileName) && f.FileName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase);
+                var typeIsZip = !string.IsNullOrEmpty(f.ContentType) && f.ContentType.Contains("zip", StringComparison.OrdinalIgnoreCase);
+                if (!nameIsZip && !typeIsZip) continue;
+                totalExtracted += await ExtractPdfEntriesFromZipAsync(f, sessionPath);
+            }
             if (totalExtracted == 0)
             {
                 try { Directory.Delete(sessionPath, true); } catch { }
@@ -555,16 +572,26 @@ public class BulkEmailController : Controller
     }
 
     [HttpPost]
-    [ValidateAntiForgeryToken]
+    [IgnoreAntiforgeryToken]
     [DisableRequestSizeLimit]
     public async Task<IActionResult> UploadZipsAjax(IFormFile? soaZip, IFormFile? invoiceZip, IFormFile? odZip, string? customCode)
     {
+        _logger.LogInformation("UploadZipsAjax invoked. ContentType={ContentType}, ContentLength={ContentLength}, HasForm={HasForm}", Request.ContentType, Request.ContentLength, Request.HasFormContentType);
         try
         {
-            if ((soaZip == null || soaZip.Length == 0) && (invoiceZip == null || invoiceZip.Length == 0) && (odZip == null || odZip.Length == 0))
-                return Json(new { ok = false, error = "Please provide at least one ZIP file." });
+            if (!Request.HasFormContentType)
+            {
+                return BadRequest(new { ok = false, error = "Request is not multipart/form-data", contentType = Request.ContentType });
+            }
+
+            var form = await Request.ReadFormAsync();
+            var files = form.Files;
+
             if (!string.IsNullOrEmpty(customCode) && !Regex.IsMatch(customCode, "^\\d{4,8}$"))
                 return Json(new { ok = false, error = "Custom code must be 4–8 digits." });
+
+            if (files == null || files.Count == 0)
+                return Json(new { ok = false, error = "Please provide at least one ZIP file." });
 
             var stamp = DateTime.UtcNow.ToString("yyyyMMdd_HHmmss");
             var shortGuid = Guid.NewGuid().ToString("N")[..8];
@@ -575,13 +602,15 @@ public class BulkEmailController : Controller
             Directory.CreateDirectory(sessionPath);
 
             int totalExtracted = 0;
-            int soaCount = 0, invCount = 0, odCount = 0, unk = 0;
+            int soaCount = 0, invCount = 0, odCount = 0, otherCount = 0;
 
-            async Task<int> Extract(IFormFile zf)
+            foreach (var f in files)
             {
-                if (zf is not { Length: > 0 }) return 0;
-                int extracted = 0;
-                using var zipStream = zf.OpenReadStream();
+                var nameIsZip = !string.IsNullOrEmpty(f.FileName) && f.FileName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase);
+                var typeIsZip = !string.IsNullOrEmpty(f.ContentType) && f.ContentType.Contains("zip", StringComparison.OrdinalIgnoreCase);
+                if (!nameIsZip && !typeIsZip) continue;
+
+                using var zipStream = f.OpenReadStream();
                 using var archive = new ZipArchive(zipStream, ZipArchiveMode.Read, leaveOpen: false);
                 foreach (var entry in archive.Entries)
                 {
@@ -599,19 +628,17 @@ public class BulkEmailController : Controller
                     using var entryStream = entry.Open();
                     using var outStream = System.IO.File.Create(destPath);
                     await entryStream.CopyToAsync(outStream);
-                    extracted++;
-                    var upper = fileName.ToUpperInvariant();
-                    if (upper.Contains("SOA")) soaCount++;
-                    else if (upper.Contains("INV") || upper.Contains("INVOICE")) invCount++;
-                    else if (upper.Contains("OD") || upper.Contains("OVERDUE")) odCount++;
-                    else unk++;
-                }
-                return extracted;
-            }
+                    totalExtracted++;
 
-            totalExtracted += await Extract(soaZip);
-            totalExtracted += await Extract(invoiceZip);
-            totalExtracted += await Extract(odZip);
+                    switch (DetectCategory(fileName))
+                    {
+                        case DocumentCategory.Soa: soaCount++; break;
+                        case DocumentCategory.Inv: invCount++; break;
+                        case DocumentCategory.Od: odCount++; break;
+                        default: otherCount++; break;
+                    }
+                }
+            }
 
             if (totalExtracted == 0)
             {
@@ -619,7 +646,7 @@ public class BulkEmailController : Controller
                 return Json(new { ok = false, error = "No PDF files found in provided ZIP(s)." });
             }
 
-            return Json(new { ok = true, sessionId = folderName, total = totalExtracted, soa = soaCount, inv = invCount, od = odCount, unk });
+            return Json(new { ok = true, sessionId = folderName, total = totalExtracted, soa = soaCount, inv = invCount, od = odCount, unk = otherCount });
         }
         catch (Exception ex)
         {
