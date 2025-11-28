@@ -33,13 +33,40 @@
         </div>
     </div>
 
-    <!-- Queued send container (no longer submits via form) -->
+    <div class="card mb-4">
+        <div class="card-header"><h5 class="mb-0">Email Drafts (SOA/Invoice vs Overdue)</h5></div>
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <h6>SOA / Invoice</h6>
+                    <label class="form-label" for="soaSubject">Subject</label>
+                    <input type="text" id="soaSubject" class="form-control" />
+                    <label class="form-label mt-2" for="soaBody">Body (HTML)</label>
+                    <textarea id="soaBody" rows="6" class="form-control"></textarea>
+                    <div class="form-text">Placeholders: {DebtorCode}, {FileCount}, {TotalSize}</div>
+                </div>
+                <div class="col-md-6">
+                    <h6>Overdue Reminder</h6>
+                    <label class="form-label" for="odSubject">Subject</label>
+                    <input type="text" id="odSubject" class="form-control" />
+                    <label class="form-label mt-2" for="odBody">Body (HTML)</label>
+                    <textarea id="odBody" rows="6" class="form-control"></textarea>
+                    <div class="form-text">Placeholders: {DebtorCode}, {FileCount}, {TotalSize}</div>
+                </div>
+            </div>
+            <div class="mt-3 d-flex gap-2">
+                <button id="saveDraftsBtn" class="btn btn-success btn-sm" type="button">Save Drafts</button>
+                <span class="text-muted small">These two drafts are shared and editable. No create/delete.</span>
+            </div>
+        </div>
+    </div>
+
     <div id="queueForm" class="mb-4">
         @Html.AntiForgeryToken()
         <input type="hidden" name="sessionId" value="@Model.SessionId" />
 
         <div class="card mb-4">
-            <div class="card-header"><h5 class="mb-0">Email Template</h5></div>
+            <div class="card-header"><h5 class="mb-0">Email Template (for this run)</h5></div>
             <div class="card-body">
                 <div class="mb-3">
                     <label class="form-label" for="subject">Subject</label>
@@ -49,6 +76,10 @@
                 <div class="mb-3">
                     <label class="form-label" for="bodyTemplate">Body (HTML)</label>
                     <textarea id="bodyTemplate" name="bodyTemplate" rows="6" class="form-control" required>Dear Customer,<br/><br/>Please find attached {FileCount} document(s) for account {DebtorCode}.<br/>Total size: {TotalSize}<br/><br/>Regards</textarea>
+                </div>
+                <div class="mb-2">
+                    <button id="applySoaInvBtn" type="button" class="btn btn-outline-primary btn-sm">Apply SOA/Invoice Draft</button>
+                    <button id="applyOverdueBtn" type="button" class="btn btn-outline-warning btn-sm">Apply Overdue Draft</button>
                 </div>
             </div>
         </div>
@@ -78,7 +109,7 @@
                                 {
                                     var g = Model.DebtorGroups[i];
                                     var collapseId = $"debtor-files-{i}";
-                                    <tr>
+                                    <tr data-debtor="@g.DebtorCode" data-filecount="@g.TotalFileCount" data-tsize="@g.TotalSizeFormatted">
                                         <td><strong>@g.DebtorCode</strong><input type="hidden" name="debtorCodes" value="@g.DebtorCode" /></td>
                                         <td>
                                             <input type="email" name="emailAddresses" value="@g.EmailAddress" class="form-control form-control-sm" placeholder="recipient@example.com" required />
@@ -140,7 +171,6 @@
         queueBtn.disabled = true;
         queueBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status"></span>Queuing...';
 
-        // Collect debtor?email mappings
         const debtorCodes = Array.from(document.querySelectorAll('input[name="debtorCodes"]')).map(i => i.value);
         const emailInputs = Array.from(document.querySelectorAll('input[name="emailAddresses"]')).map(i => i.value);
         const mappings = {};
@@ -173,7 +203,6 @@
             const result = await resp.json();
             if (!result.ok) throw new Error(result.error || 'Unknown error');
 
-            // Redirect to progress page
             window.location.href = '@Url.Action("Progress","BulkEmail")?jobId=' + encodeURIComponent(result.jobId);
         } catch (err) {
             console.error('Queue error:', err);
@@ -182,6 +211,52 @@
             queueBtn.innerHTML = '<i class="bi bi-cloud-upload"></i> Queue &amp; Monitor';
         }
     });
+
+    // Drafts load/save/apply
+    const soaSubject = document.getElementById('soaSubject');
+    const soaBody = document.getElementById('soaBody');
+    const odSubject = document.getElementById('odSubject');
+    const odBody = document.getElementById('odBody');
+
+    async function loadDrafts(){
+        const res = await fetch('@Url.Action("EmailDraftsJson","BulkEmail")');
+        const j = await res.json();
+        if (j && j.ok && j.drafts){
+            soaSubject.value = j.drafts.soaInvSubject || soaSubject.value;
+            soaBody.value = j.drafts.soaInvBody || soaBody.value;
+            odSubject.value = j.drafts.overdueSubject || odSubject.value;
+            odBody.value = j.drafts.overdueBody || odBody.value;
+        }
+    }
+
+    async function saveDrafts(){
+        const payload = {
+            soaInvSubject: soaSubject.value,
+            soaInvBody: soaBody.value,
+            overdueSubject: odSubject.value,
+            overdueBody: odBody.value
+        };
+        const res = await fetch('@Url.Action("SaveEmailDraftsAjax","BulkEmail")', {
+            method: 'POST',
+            headers: { 'Content-Type':'application/json', 'RequestVerificationToken': tokenInput.value },
+            body: JSON.stringify(payload)
+        });
+        const j = await res.json();
+        if (!j.ok) { alert(j.error || 'Save failed'); return; }
+        alert('Drafts saved');
+    }
+
+    document.getElementById('saveDraftsBtn').addEventListener('click', saveDrafts);
+    document.getElementById('applySoaInvBtn').addEventListener('click', ()=>{
+        subjectInput.value = soaSubject.value;
+        bodyInput.value = soaBody.value;
+    });
+    document.getElementById('applyOverdueBtn').addEventListener('click', ()=>{
+        subjectInput.value = odSubject.value;
+        bodyInput.value = odBody.value;
+    });
+
+    loadDrafts();
 })();
 </script>
 }

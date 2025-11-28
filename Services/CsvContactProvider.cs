@@ -7,24 +7,34 @@ namespace socconvertor.Services;
 public class CsvContactProvider : IContactProvider
 {
     private readonly IConfiguration _config;
-    private readonly Lazy<Dictionary<string, string>> _entries;
+    private readonly Lazy<Dictionary<string, GoogleContactEntry>> _entries;
 
     public CsvContactProvider(IConfiguration config)
     {
         _config = config;
-        _entries = new Lazy<Dictionary<string, string>>(Load, true);
+        _entries = new Lazy<Dictionary<string, GoogleContactEntry>>(Load, true);
     }
 
     public string? GetEmailForDebtor(string debtorCode)
     {
-        if (string.IsNullOrWhiteSpace(debtorCode)) return null;
-        var map = _entries.Value;
-        return map.TryGetValue(debtorCode, out var email) ? email : null;
+        var details = GetDetails(debtorCode);
+        if (details == null) return null;
+        if (details.To.Count > 0) return details.To[0];
+        if (details.Cc.Count > 0) return details.Cc[0];
+        if (details.Bcc.Count > 0) return details.Bcc[0];
+        return null;
     }
 
-    private Dictionary<string, string> Load()
+    public GoogleContactEntry? GetDetails(string debtorCode)
     {
-        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (string.IsNullOrWhiteSpace(debtorCode)) return null;
+        var map = _entries.Value;
+        return map.TryGetValue(debtorCode.Trim(), out var entry) ? entry : null;
+    }
+
+    private Dictionary<string, GoogleContactEntry> Load()
+    {
+        var result = new Dictionary<string, GoogleContactEntry>(StringComparer.OrdinalIgnoreCase);
 
         var path = _config["Contacts:Csv:Path"];
         if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
@@ -32,6 +42,20 @@ public class CsvContactProvider : IContactProvider
             return result; // no csv configured
         }
 
+        // Prefer our robust Google parser
+        try
+        {
+            var parsed = GoogleContactsCsvReader.Parse(path);
+            foreach (var kv in parsed)
+                result[kv.Key] = kv.Value;
+            return result;
+        }
+        catch
+        {
+            // fallback below
+        }
+
+        // Fallback: simple two-column CSV (DebtorCode,Email)
         var debtorCodeCol = _config["Contacts:Csv:DebtorCodeColumn"] ?? "DebtorCode";
         var emailCol = _config["Contacts:Csv:EmailColumn"] ?? "Email";
 
@@ -52,37 +76,20 @@ public class CsvContactProvider : IContactProvider
             foreach (IDictionary<string, object?> row in records)
             {
                 var dict = row.ToDictionary(k => (k.Key ?? string.Empty).Trim(), v => v.Value?.ToString()?.Trim(), StringComparer.OrdinalIgnoreCase);
-
-                // Support Google Contacts export: default email column is "E-mail 1 - Value"
-                var email = GetFirstNonEmpty(dict, emailCol, "E-mail 1 - Value", "Email 1 - Value");
-
-                // Debtor code: prefer configured column. For Google export, allow custom field named "Custom Field 1 - Value" to carry debtor code
-                var code = GetFirstNonEmpty(dict, debtorCodeCol, "Custom Field 1 - Value", "User Defined 1 - Value");
-
+                var code = dict.ContainsKey(debtorCodeCol) ? dict[debtorCodeCol] : null;
+                var email = dict.ContainsKey(emailCol) ? dict[emailCol] : null;
                 if (!string.IsNullOrWhiteSpace(code) && !string.IsNullOrWhiteSpace(email))
                 {
-                    result[code] = email;
+                    result[code!] = new GoogleContactEntry
+                    {
+                        DebtorCode = code!,
+                        To = new List<string> { email! }
+                    };
                 }
             }
         }
-        catch
-        {
-            // swallow parse errors; provider will just have fewer entries
-        }
+        catch { }
 
         return result;
-    }
-
-    private static string? GetFirstNonEmpty(IDictionary<string, string?> dict, params string[] keys)
-    {
-        foreach (var k in keys)
-        {
-            if (!string.IsNullOrWhiteSpace(k) && dict.TryGetValue(k, out var val))
-            {
-                var trimmed = val?.Trim();
-                if (!string.IsNullOrWhiteSpace(trimmed)) return trimmed;
-            }
-        }
-        return null;
     }
 }

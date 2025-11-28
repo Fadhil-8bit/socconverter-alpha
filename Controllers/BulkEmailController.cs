@@ -19,6 +19,8 @@ public class BulkEmailController : Controller
     private readonly ILogger<BulkEmailController> _logger;
     private readonly IStoragePaths _paths;
     private readonly IBulkEmailDispatchQueue _dispatchQueue;
+    private readonly ITemplateStore _templateStore;
+    private readonly IEmailDraftStore _draftStore;
 
     private static DocumentCategory DetectCategory(string fileName)
     {
@@ -37,13 +39,17 @@ public class BulkEmailController : Controller
         IConfiguration configuration,
         ILogger<BulkEmailController> logger,
         IStoragePaths paths,
-        IBulkEmailDispatchQueue dispatchQueue)
+        IBulkEmailDispatchQueue dispatchQueue,
+        ITemplateStore templateStore,
+        IEmailDraftStore draftStore)
     {
         _bulkEmailService = bulkEmailService;
         _configuration = configuration;
         _logger = logger;
         _paths = paths;
         _dispatchQueue = dispatchQueue;
+        _templateStore = templateStore;
+        _draftStore = draftStore;
     }
 
     private List<SessionInfo> GetSessionInfos()
@@ -719,5 +725,48 @@ public class BulkEmailController : Controller
             .ToList();
 
         return Json(new { ok = true, jobId = job.JobId, total, page, pageSize, items });
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> TemplatesJson()
+    {
+        var list = await _templateStore.GetAllAsync();
+        return Json(new { ok = true, templates = list });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> SaveTemplateAjax([FromBody] EmailTemplate template)
+    {
+        if (template == null) return BadRequest(new { ok = false, error = "template missing" });
+        if (string.IsNullOrWhiteSpace(template.Name)) return BadRequest(new { ok = false, error = "template name required" });
+        var saved = await _templateStore.SaveAsync(template);
+        return Json(new { ok = true, template = saved });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> DeleteTemplateAjax([FromBody] Dictionary<string,string> payload)
+    {
+        if (payload == null || !payload.TryGetValue("id", out var id) || string.IsNullOrWhiteSpace(id))
+            return BadRequest(new { ok = false, error = "id missing" });
+        var removed = await _templateStore.DeleteAsync(id);
+        return Json(new { ok = removed, id });
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> EmailDraftsJson()
+    {
+        var drafts = await _draftStore.GetAsync();
+        return Json(new { ok = true, drafts });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> SaveEmailDraftsAjax([FromBody] EmailDrafts drafts)
+    {
+        if (drafts == null) return BadRequest(new { ok = false, error = "drafts missing" });
+        await _draftStore.SaveAsync(drafts);
+        return Json(new { ok = true });
     }
 }

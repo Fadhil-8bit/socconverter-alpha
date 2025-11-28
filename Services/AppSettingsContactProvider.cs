@@ -28,4 +28,17 @@ public class AppSettingsContactProvider : IContactProvider
         if (string.IsNullOrWhiteSpace(debtorCode)) return null;
         return _cache.TryGetValue(debtorCode, out var email) ? email : null;
     }
+
+    public GoogleContactEntry? GetDetails(string debtorCode)
+    {
+        var email = GetEmailForDebtor(debtorCode);
+        if (string.IsNullOrWhiteSpace(email)) return null;
+        return new GoogleContactEntry
+        {
+            DebtorCode = debtorCode,
+            CompanyName = string.Empty,
+            Notes = string.Empty,
+            To = new List<string> { email }
+        };
+    }
 }

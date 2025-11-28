@@ -92,7 +92,8 @@ public class BulkEmailService : IBulkEmailService
         // Create debtor email groups (prefill email from contacts if available)
         foreach (var kvp in attachmentsByDebtor)
         {
-            var prefill = _contacts.GetEmailForDebtor(kvp.Key) ?? string.Empty;
+            var details = _contacts.GetDetails(kvp.Key);
+            var prefill = details?.To.FirstOrDefault();
             if (string.IsNullOrWhiteSpace(prefill))
             {
                 // auto-generate test email address pattern: debtor-<normalized-debtor-code>@example.com
@@ -103,8 +104,9 @@ public class BulkEmailService : IBulkEmailService
             bulkSession.DebtorGroups.Add(new DebtorEmailGroup
             {
                 DebtorCode = kvp.Key,
+                DebtorName = details?.CompanyName,
                 Attachments = kvp.Value,
-                EmailAddress = prefill
+                EmailAddress = prefill!
             });
         }
 
@@ -173,9 +175,40 @@ public class BulkEmailService : IBulkEmailService
                     .Select(a => EmailAttachment.FromFile(a.FilePath))
                     .ToList();
 
+                // Contact details for placeholders and CC/BCC routing
+                var details = _contacts.GetDetails(group.DebtorCode);
+
                 // Replace placeholders in subject and body
-                var personalizedSubject = ReplacePlaceholders(subject, group, options.Placeholders);
-                var personalizedBody = ReplacePlaceholders(bodyTemplate, group, options.Placeholders);
+                var placeholders = new Dictionary<string, string>(options.Placeholders ?? new())
+                {
+                    ["DebtorCode"] = group.DebtorCode,
+                    ["DebtorName"] = group.DebtorName ?? group.DebtorCode,
+                    ["FileCount"] = group.TotalFileCount.ToString(),
+                    ["TotalSize"] = group.TotalSizeFormatted,
+                };
+                if (!string.IsNullOrWhiteSpace(details?.CompanyName))
+                    placeholders["OrganizationName"] = details!.CompanyName!;
+                if (!string.IsNullOrWhiteSpace(details?.Notes))
+                    placeholders["Days"] = details!.Notes!; // map Notes ? {Days}
+
+                var personalizedSubject = ReplacePlaceholders(subject, placeholders);
+                var personalizedBody = ReplacePlaceholders(bodyTemplate, placeholders);
+
+                // Also replace literal token "Organization Name" if drafts omitted braces
+                if (placeholders.TryGetValue("OrganizationName", out var org) && !string.IsNullOrWhiteSpace(org))
+                {
+                    personalizedSubject = personalizedSubject.Replace("Organization Name", org);
+                    personalizedBody = personalizedBody.Replace("Organization Name", org);
+                }
+
+                // Clone options per recipient to avoid cross-recipient CC/BCC accumulation
+                var perRecipientOptions = CloneOptions(options);
+                // Append CC/BCC as per label routing
+                if (details != null)
+                {
+                    perRecipientOptions.CC.AddRange(details.Cc);
+                    perRecipientOptions.BCC.AddRange(details.Bcc);
+                }
 
                 // Rate limit windows refresh
                 var now = DateTime.UtcNow;
@@ -210,7 +243,7 @@ public class BulkEmailService : IBulkEmailService
                     personalizedSubject,
                     personalizedBody,
                     emailAttachments,
-                    options
+                    perRecipientOptions
                 );
 
                 // Track sent emails for rate limiting
@@ -273,18 +306,42 @@ public class BulkEmailService : IBulkEmailService
         return DocumentType.Invoice; // Default
     }
 
-    private static string ReplacePlaceholders(string template, DebtorEmailGroup group, Dictionary<string, string> customPlaceholders)
+    private static string ReplacePlaceholders(string template, Dictionary<string,string> placeholders)
     {
-        var result = template
-            .Replace("{DebtorCode}", group.DebtorCode)
-            .Replace("{DebtorName}", group.DebtorName ?? group.DebtorCode)
-            .Replace("{FileCount}", group.TotalFileCount.ToString())
-            .Replace("{TotalSize}", group.TotalSizeFormatted);
-
-        // Custom placeholders
-        foreach (var kvp in customPlaceholders)
-            result = result.Replace($"{{{kvp.Key}}}", kvp.Value);
-
+        var result = template;
+        foreach (var kvp in placeholders)
+        {
+            result = result.Replace($"{{{kvp.Key}}}", kvp.Value ?? string.Empty);
+        }
         return result;
+    }
+
+    private static EmailOptions CloneOptions(EmailOptions src)
+    {
+        return new EmailOptions
+        {
+            FromAddress = src.FromAddress,
+            FromName = src.FromName,
+            IsHtml = src.IsHtml,
+            MaxAttachmentSizeMB = src.MaxAttachmentSizeMB,
+            ReplyTo = src.ReplyTo,
+            CC = new List<string>(src.CC),
+            BCC = new List<string>(src.BCC),
+            Placeholders = new Dictionary<string, string>(src.Placeholders ?? new()),
+            SmtpSettings = src.SmtpSettings == null ? null : new SmtpSettings
+            {
+                Host = src.SmtpSettings.Host,
+                Port = src.SmtpSettings.Port,
+                Username = src.SmtpSettings.Username,
+                Password = src.SmtpSettings.Password,
+                EnableSsl = src.SmtpSettings.EnableSsl,
+                TimeoutSeconds = src.SmtpSettings.TimeoutSeconds
+            },
+            DelayMs = src.DelayMs,
+            MaxPerMinute = src.MaxPerMinute,
+            MaxPerHour = src.MaxPerHour,
+            JobId = src.JobId,
+            DebtorCode = src.DebtorCode
+        };
     }
 }

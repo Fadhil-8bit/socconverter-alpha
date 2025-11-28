@@ -13,14 +13,16 @@ public class BulkEmailDispatchWorker : BackgroundService
     private readonly ILogger<BulkEmailDispatchWorker> _logger;
     private readonly IConfiguration _config;
     private readonly IEmailSender _emailSender;
+    private readonly IContactProvider _contacts;
 
-    public BulkEmailDispatchWorker(IBulkEmailDispatchQueue queue, IBulkEmailService bulkService, ILogger<BulkEmailDispatchWorker> logger, IConfiguration config, IEmailSender emailSender)
+    public BulkEmailDispatchWorker(IBulkEmailDispatchQueue queue, IBulkEmailService bulkService, ILogger<BulkEmailDispatchWorker> logger, IConfiguration config, IEmailSender emailSender, IContactProvider contacts)
     {
         _queue = queue;
         _bulkService = bulkService;
         _logger = logger;
         _config = config;
         _emailSender = emailSender;
+        _contacts = contacts;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -150,17 +152,39 @@ public class BulkEmailDispatchWorker : BackgroundService
 
                     // Build attachments from job item paths
                     var attachments = item.AttachmentPaths.Select(p => EmailAttachment.FromFile(p)).ToList();
+
+                    // Build subject/body from job templates and placeholders
                     string subjectTemplate = job.SubjectTemplate;
                     string bodyTemplate = job.BodyTemplate;
                     string formattedSize = (item.TotalSizeBytes / (1024.0 * 1024.0)).ToString("F1") + " MB";
+
+                    // contact details for placeholders & routing
+                    var details = _contacts.GetDetails(item.DebtorCode);
+                    var org = details?.CompanyName ?? string.Empty;
+                    var days = details?.Notes ?? string.Empty;
+
+                    // Apply CC/BCC from contact labels
+                    if (details != null)
+                    {
+                        options.CC.AddRange(details.Cc);
+                        options.BCC.AddRange(details.Bcc);
+                    }
+
                     string subject = subjectTemplate
                         .Replace("{DebtorCode}", item.DebtorCode)
                         .Replace("{FileCount}", item.AttachmentCount.ToString())
-                        .Replace("{TotalSize}", formattedSize);
+                        .Replace("{TotalSize}", formattedSize)
+                        .Replace("{OrganizationName}", org);
+                    // fallback for literal token in drafts
+                    if (!string.IsNullOrEmpty(org)) subject = subject.Replace("Organization Name", org);
+
                     string body = bodyTemplate
                         .Replace("{DebtorCode}", item.DebtorCode)
                         .Replace("{FileCount}", item.AttachmentCount.ToString())
-                        .Replace("{TotalSize}", formattedSize);
+                        .Replace("{TotalSize}", formattedSize)
+                        .Replace("{OrganizationName}", org)
+                        .Replace("{Days}", days);
+                    if (!string.IsNullOrEmpty(org)) body = body.Replace("Organization Name", org);
 
                     // Send with built-in retry logic (EmailSenderService handles retries)
                     await _emailSender.SendEmailWithAttachmentsAsync(

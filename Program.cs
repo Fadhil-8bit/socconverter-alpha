@@ -50,6 +50,12 @@ builder.Services.AddHostedService<BulkEmailDispatchWorker>();
 // Add hosted services
 builder.Services.AddHostedService<BulkEmailRetentionService>();
 
+// Email drafts store
+builder.Services.AddSingleton<IEmailDraftStore, FileEmailDraftStore>();
+
+// Template store (kept for backward compatibility where controller depends on it)
+builder.Services.AddSingleton<ITemplateStore, FileTemplateStore>();
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
