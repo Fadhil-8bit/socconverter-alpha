@@ -14,8 +14,7 @@ A simple ASP.NET Core MVC tool for splitting PDF files by SOA, Invoice, or Debto
 
 ## Screenshots
 ### Main Upload Interface
-![Main Interface](<img width="2339" height="1653" alt="Upload PDF - socconvertor-1" src="https://github.com/user-attachments/assets/e38101b5-e856-448b-9d58-e6c0dc474515" />
-)
+![Main Interface](<img width="2339" height="1653" alt="Upload PDF - socconvertor-1" src="https://github.com/user-attachments/assets/e38101b5-e856-448b-9d58-e6c0dc474515" />)
 
 ## Getting Started
 
