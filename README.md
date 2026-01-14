@@ -21,7 +21,7 @@ A simple ASP.NET Core MVC tool for splitting PDF files by SOA, Invoice, or Debto
 ### Prerequisites
 - .NET 9.0 SDK
 - Git
-- (Optional) Docker
+- Docker
 
 ### Running Locally
 ```powershell
