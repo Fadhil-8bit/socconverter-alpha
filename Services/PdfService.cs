@@ -32,11 +32,13 @@ namespace PdfReaderDemo.Services
         
         private static readonly Regex PageNumberRegex = new(@"(Page|Pg)\s*No*\.?\s*[:\-]?\s*(Page\s*)?([0-9]+)(\s*(of|/)\s*[0-9]+)?", 
             RegexOptions.IgnoreCase | RegexOptions.Compiled, TimeSpan.FromMilliseconds(500));
-        
+
         // OD (Overdue) specific patterns
-        private static readonly Regex DebtorCodeRegex = new(@"Debtor Code\s*:\s*([A-Z0-9]+-[A-Z0-9]+)", 
+        // Bulletproofed for weird spaces, newlines, hidden punctuation, and different dash types
+        private static readonly Regex DebtorCodeRegex = new(
+            @"Debtor\s+Code\W*([A-Z0-9]+\s*[-–—]\s*[A-Z0-9]+)",
             RegexOptions.IgnoreCase | RegexOptions.Compiled, TimeSpan.FromMilliseconds(500));
-        
+
         #endregion
 
         #region SOA Operations
